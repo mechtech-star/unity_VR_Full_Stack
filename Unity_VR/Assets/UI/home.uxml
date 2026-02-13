@@ -1,0 +1,31 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements"
+         editor-extension-mode="False">
+    <Style src="project://database/Assets/UI/home.uss"/>
+    <!-- Root -->
+    <ui:VisualElement class="home-root">
+        <!-- Header -->
+        <ui:VisualElement class="home-header">
+            <ui:Label class="home-logo" text="⚙" />
+            <ui:VisualElement class="home-header-text">
+                <ui:Label class="home-app-title" text="VR Training Platform" />
+                <ui:Label class="home-app-subtitle" text="Select a training module to begin" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- Search / Filter Bar -->
+        <ui:VisualElement class="home-filter-bar">
+            <ui:Label class="home-filter-label" text="All Modules" />
+            <ui:Label class="home-module-count" name="moduleCount" text="0 modules" />
+        </ui:VisualElement>
+
+        <!-- Module Grid (scrollable) -->
+        <ui:ScrollView name="moduleGrid" class="home-module-grid">
+            <!-- Module cards are injected dynamically by HomePageController -->
+        </ui:ScrollView>
+
+        <!-- Footer -->
+        <ui:VisualElement class="home-footer">
+            <ui:Label class="home-footer-text" text="v1.0 — VR Training System" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

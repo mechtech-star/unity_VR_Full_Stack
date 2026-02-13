@@ -1,0 +1,533 @@
+/* ============================================
+   Modern Shadcn-Inspired Design System
+   Zinc dark palette · Minimalistic · No scale
+   ============================================ */
+
+/* ── Root Containers ──────────────────────────── */
+.root {
+    flex-grow: 1;
+    flex-direction: column;
+    background-color: rgb(9, 9, 11);           /* zinc-950 */
+    padding: 32px;
+    border-radius: 24px;
+    overflow: hidden;
+}
+
+.roottoppanel {
+    flex-grow: 1;
+    flex-direction: column;
+    background-color: rgb(9, 9, 11);           /* zinc-950 */
+    padding: 12px 20px;
+    border-radius: 60px;
+    overflow: hidden;
+    justify-content: center;
+}
+
+/* ============================================
+   Top Panel — Horizontal Row Layout
+   ============================================ */
+.top-panel-row {
+    flex-direction: row;
+    align-items: center;
+    flex-grow: 1;
+}
+
+.top-panel-spacer {
+    flex-grow: 1;
+}
+
+/* ============================================
+   Header Section (main training panel)
+   ============================================ */
+.header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    height: 110px;
+    margin-bottom: 24px;
+    padding: 0 8px;
+}
+
+.menu-button {
+    width: 96px;
+    height: 96px;
+    font-size: 38px;
+    border-radius: 16px;
+    border-color: rgba(63, 63, 70, 0.4);       /* zinc-700 */
+    border-width: 1px;
+    background-color: rgb(24, 24, 27);          /* zinc-900 */
+    color: rgb(161, 161, 170);                  /* zinc-400 */
+    transition-duration: 0.2s;
+    transition-property: background-color, border-color, color;
+    transition-timing-function: ease-out;
+    margin-right: 16px;
+    -unity-text-align: middle-center;
+    justify-content: center;
+    align-items: center;
+}
+
+.menu-button:hover {
+    background-color: rgb(39, 39, 42);          /* zinc-800 */
+    border-color: rgb(82, 82, 91);              /* zinc-600 */
+    color: rgb(228, 228, 231);                  /* zinc-200 */
+}
+
+.menu-button:active {
+    background-color: rgb(24, 24, 27);
+}
+
+/* Home / back-to-home button (lives in top panel) */
+.home-nav-button {
+    height: 72px;
+    min-width: 120px;
+    padding: 0 28px;
+    font-size: 28px;
+    -unity-font-style: bold;
+    border-radius: 36px;
+    border-color: rgba(96, 165, 250, 0.25);
+    border-width: 1px;
+    background-color: rgba(96, 165, 250, 0.08);
+    color: rgb(96, 165, 250);                   /* blue-400 */
+    transition-duration: 0.2s;
+    transition-property: background-color, border-color, color;
+    transition-timing-function: ease-out;
+    -unity-text-align: middle-center;
+    justify-content: center;
+    align-items: center;
+    letter-spacing: -0.3px;
+}
+
+.home-nav-button:hover {
+    background-color: rgba(96, 165, 250, 0.16);
+    border-color: rgba(96, 165, 250, 0.5);
+    color: rgb(147, 197, 253);                  /* blue-300 */
+}
+
+.home-nav-button:active {
+    background-color: rgba(96, 165, 250, 0.06);
+}
+
+.title {
+    flex-grow: 1;
+    -unity-text-align: middle-left;
+    font-size: 36px;
+    -unity-font-style: bold;
+    color: rgb(250, 250, 250);                  /* zinc-50 */
+    letter-spacing: -0.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 85%;
+}
+
+/* ============================================
+   Action Buttons (Follow / Ask AI)
+   ============================================ */
+.header-actions {
+    flex-direction: row;
+    align-items: center;
+    height: 100%;
+    margin-left: auto;
+    align-self: center;
+    justify-content: center;
+}
+
+.action-button {
+    flex-grow: 0;
+    width: auto;
+    min-width: 130px;
+    height: 72px;
+    padding: 0 28px;
+    font-size: 28px;
+    border-radius: 36px;
+    border-width: 1px;
+    border-color: rgba(63, 63, 70, 0.4);
+    background-color: rgb(39, 39, 42);          /* zinc-800 */
+    color: rgb(228, 228, 231);                  /* zinc-200 */
+    transition-duration: 0.2s;
+    transition-property: background-color, border-color, color;
+    transition-timing-function: ease-out;
+    margin-left: 10px;
+    -unity-text-align: middle-center;
+    justify-content: center;
+    align-items: center;
+    letter-spacing: -0.3px;
+    white-space: nowrap;
+}
+
+.action-button:hover {
+    background-color: rgb(52, 52, 56);
+    border-color: rgb(82, 82, 91);
+    color: rgb(250, 250, 250);
+}
+
+.action-button:active {
+    background-color: rgb(39, 39, 42);
+}
+
+/* Follow — active / on */
+.follow-button {
+    background-color: rgb(16, 185, 129);        /* emerald-500 */
+    border-color: rgb(5, 150, 105);             /* emerald-600 */
+    color: rgb(255, 255, 255);
+    -unity-font-style: bold;
+    border-width: 0;
+}
+
+.follow-button:hover {
+    background-color: rgb(5, 150, 105);         /* emerald-600 */
+}
+
+/* Follow — off */
+.follow-button--off {
+    background-color: rgb(39, 39, 42);
+    border-color: rgba(63, 63, 70, 0.4);
+    border-width: 1px;
+    color: rgb(161, 161, 170);                  /* zinc-400 */
+    -unity-font-style: normal;
+}
+
+.follow-button--off:hover {
+    background-color: rgb(52, 52, 56);
+    border-color: rgb(82, 82, 91);
+    color: rgb(228, 228, 231);
+}
+
+/* Ask AI — neutral */
+.ask-button {
+    background-color: rgb(39, 39, 42);
+    border-color: rgba(63, 63, 70, 0.4);
+    color: rgb(228, 228, 231);
+}
+
+.ask-button:hover {
+    background-color: rgb(52, 52, 56);
+    color: rgb(250, 250, 250);
+}
+
+/* Ask AI — off */
+.ask-button--off {
+    background-color: rgb(39, 39, 42);
+    border-color: rgba(63, 63, 70, 0.4);
+    border-width: 1px;
+    color: rgb(161, 161, 170);
+    -unity-font-style: normal;
+}
+
+.ask-button--off:hover {
+    background-color: rgb(52, 52, 56);
+    border-color: rgb(82, 82, 91);
+    color: rgb(228, 228, 231);
+}
+
+/* ============================================
+   Body / Content Section
+   ============================================ */
+.body {
+    flex-grow: 1;
+    justify-content: flex-start;
+    align-items: flex-start;
+    padding: 48px 40px;
+    border-radius: 20px;
+    background-color: rgb(24, 24, 27);          /* zinc-900 */
+    border-width: 1px;
+    border-color: rgba(63, 63, 70, 0.3);
+    margin-bottom: 24px;
+}
+
+.content-text {
+    font-size: 34px;
+    color: rgb(212, 212, 216);                  /* zinc-300 */
+    -unity-text-align: middle-left;
+    white-space: normal;
+    letter-spacing: -0.2px;
+    max-width: 100%;
+    align-self: stretch;
+}
+
+/* ============================================
+   Footer / Navigation
+   ============================================ */
+.footer {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    background-color: rgba(24, 24, 27, 0.5);   /* zinc-900 translucent */
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: rgba(63, 63, 70, 0.25);
+}
+
+.nav-button {
+    flex-grow: 0;
+    width: 280px;
+    height: 78px;
+    font-size: 32px;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: rgba(63, 63, 70, 0.4);
+    background-color: rgb(39, 39, 42);          /* zinc-800 */
+    color: rgb(228, 228, 231);                  /* zinc-200 */
+    transition-duration: 0.2s;
+    transition-property: background-color, border-color, color;
+    transition-timing-function: ease-out;
+    -unity-text-align: middle-center;
+    justify-content: center;
+    align-items: center;
+    letter-spacing: -0.3px;
+}
+
+.nav-button:hover {
+    background-color: rgb(52, 52, 56);          /* zinc-700 */
+    border-color: rgb(82, 82, 91);
+    color: rgb(250, 250, 250);
+}
+
+.nav-button:active {
+    background-color: rgb(39, 39, 42);
+}
+
+.footer .nav-button {
+    margin-left: 16px;
+}
+
+.nav-button.first {
+    margin-left: 0;
+}
+
+.nav-button.primary {
+    background-color: rgb(59, 130, 246);        /* blue-500 */
+    border-color: rgb(37, 99, 235);
+    color: rgb(255, 255, 255);
+    -unity-font-style: bold;
+    border-width: 0;
+}
+
+.nav-button.primary:hover {
+    background-color: rgb(37, 99, 235);         /* blue-600 */
+    border-color: rgb(29, 78, 216);
+    color: rgb(255, 255, 255);
+}
+
+.nav-button.primary:active {
+    background-color: rgb(29, 78, 216);         /* blue-700 */
+}
+
+/* Ensure Button internal Label is centered */
+.nav-button > Label,
+.nav-button .unity-button-text {
+    -unity-text-align: middle-center;
+    align-self: center;
+}
+
+/* ============================================
+   Menu Overlay
+   ============================================ */
+.hidden {
+    display: none;
+}
+
+.menu-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(9, 9, 11, 0.97);    /* zinc-950 */
+    padding: 36px;
+    border-radius: 24px;
+    overflow: hidden;
+}
+
+.menu-title {
+    font-size: 44px;
+    -unity-font-style: bold;
+    color: rgb(250, 250, 250);                  /* zinc-50 */
+    letter-spacing: -0.5px;
+    margin-bottom: 16px;
+    -unity-text-align: middle-left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.task-tree {
+    flex-grow: 1;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    overflow-y: scroll;
+    overflow-x: hidden;
+    white-space: normal;
+    width: 100%;
+}
+
+/* ── Scrollbar styling ── */
+.task-tree .unity-scroller--vertical {
+    width: 8px;
+    margin-left: 4px;
+    background-color: transparent;
+    border-width: 0;
+}
+
+.task-tree .unity-scroller--vertical .unity-base-slider__tracker {
+    background-color: rgba(255, 255, 255, 0.02);
+    border-radius: 4px;
+    border-width: 0;
+}
+
+.task-tree .unity-scroller--vertical .unity-base-slider__dragger {
+    background-color: rgba(96, 165, 250, 0.15);
+    border-radius: 4px;
+    min-height: 24px;
+    border-width: 0;
+    transition-duration: 0.15s;
+}
+
+.task-tree .unity-scroller--vertical .unity-base-slider__dragger:hover {
+    background-color: rgba(96, 165, 250, 0.30);
+}
+
+.task-tree .unity-scroller--vertical .unity-base-slider__dragger:active {
+    background-color: rgba(96, 165, 250, 0.45);
+}
+
+.task-tree .unity-scroller--vertical .unity-scroller__low-button,
+.task-tree .unity-scroller--vertical .unity-scroller__high-button {
+    display: none;
+}
+
+.task-header {
+    margin-top: 16px;
+    margin-bottom: 10px;
+    padding-left: 8px;
+    font-size: 30px;
+    -unity-font-style: bold;
+    color: rgb(96, 165, 250);                   /* blue-400 */
+    -unity-text-align: middle-left;
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: clip;
+    height: auto;
+    max-width: 100%;
+    letter-spacing: -0.3px;
+}
+
+.task-header--active {
+    color: rgb(147, 197, 253);                  /* blue-300 */
+}
+
+.step-item {
+    height: 72px;
+    font-size: 26px;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: rgba(63, 63, 70, 0.3);
+    background-color: rgb(24, 24, 27);          /* zinc-900 */
+    color: rgb(212, 212, 216);                  /* zinc-300 */
+    margin-bottom: 8px;
+    -unity-text-align: middle-left;
+    padding-left: 20px;
+    transition-duration: 0.15s;
+    transition-property: background-color, border-color, color;
+    transition-timing-function: ease-out;
+    letter-spacing: -0.2px;
+}
+
+.step-item:hover {
+    background-color: rgb(39, 39, 42);          /* zinc-800 */
+    border-color: rgb(82, 82, 91);
+    color: rgb(250, 250, 250);
+}
+
+.step-item:active {
+    background-color: rgb(52, 52, 56);
+}
+
+.step-item--active {
+    background-color: rgba(96, 165, 250, 0.08);
+    border-color: rgba(96, 165, 250, 0.3);
+    color: rgb(147, 197, 253);                  /* blue-300 */
+}
+
+/* ============================================
+   Media Panel
+   ============================================ */
+.media-root {
+    height: 100%;
+    width: auto;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 12px;
+}
+
+.media-image {
+    width: auto;
+    height: 100%;
+    max-width: 1440px;
+    border-radius: 16px;
+    background-color: rgb(12, 12, 14);
+    border-width: 1px;
+    border-color: rgba(63, 63, 70, 0.25);
+    margin: 8px 0;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.video-container {
+    width: auto;
+    height: 100%;
+    max-width: 1440px;
+    border-radius: 16px;
+    background-color: rgb(6, 6, 8);
+    border-width: 1px;
+    border-color: rgba(63, 63, 70, 0.25);
+    margin: 8px 0;
+}
+
+/* ============================================
+   Question Step — Choice Buttons
+   ============================================ */
+.question-container {
+    flex-direction: column;
+    align-items: stretch;
+    align-self: stretch;
+    margin-top: 36px;
+}
+
+.question-choice-button {
+    height: 88px;
+    font-size: 32px;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: rgba(63, 63, 70, 0.4);
+    background-color: rgb(39, 39, 42);          /* zinc-800 */
+    color: rgb(228, 228, 231);                  /* zinc-200 */
+    margin-bottom: 12px;
+    padding: 14px 28px;
+    -unity-text-align: middle-center;
+    transition-duration: 0.2s;
+    transition-property: background-color, border-color, color;
+    transition-timing-function: ease-out;
+    letter-spacing: -0.3px;
+}
+
+.question-choice-button:hover {
+    background-color: rgb(52, 52, 56);
+    border-color: rgb(96, 165, 250);            /* blue-400 */
+    color: rgb(250, 250, 250);
+}
+
+.question-choice-button:active {
+    background-color: rgb(37, 99, 235);         /* blue-600 */
+    border-color: rgb(29, 78, 216);
+    color: rgb(255, 255, 255);
+}
+
+/* ============================================
+   Action Container (footer middle slot)
+   ============================================ */
+.action-container {
+    flex-grow: 1;
+}

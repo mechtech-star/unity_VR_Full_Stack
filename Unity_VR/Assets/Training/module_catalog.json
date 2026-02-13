@@ -1,0 +1,49 @@
+{
+  "modules": [
+    {
+      "moduleId": "PUMP_MAINT_001",
+      "title": "Centrifugal Pump Preventive Maintenance",
+      "description": "Learn the step-by-step procedure for preventive maintenance of a centrifugal pump including inspection, disassembly, lubrication, and reassembly.",
+      "version": "1.0",
+      "mode": "VR",
+      "estimatedDurationMin": 25,
+      "language": "en",
+      "taskCount": 3,
+      "stepCount": 11,
+      "icon": "🔧",
+      "jsonPath": "Training/DummyData/training_001",
+      "thumbnail": "Prefabs/Media/testImage1",
+      "tags": ["Mechanical", "Pump", "Preventive Maintenance"]
+    },
+    {
+      "moduleId": "VALVE_INSP_002",
+      "title": "Industrial Valve Inspection & Calibration",
+      "description": "Standard operating procedure for inspecting and calibrating industrial gate valves used in process piping systems.",
+      "version": "1.0",
+      "mode": "VR",
+      "estimatedDurationMin": 20,
+      "language": "en",
+      "taskCount": 3,
+      "stepCount": 9,
+      "icon": "🔩",
+      "jsonPath": "Training/DummyData/training_002",
+      "thumbnail": "Prefabs/Media/testImage2",
+      "tags": ["Piping", "Valve", "Calibration"]
+    },
+    {
+      "moduleId": "ELEC_PANEL_003",
+      "title": "Electrical Panel Safety & Maintenance",
+      "description": "Safe procedure for inspecting, de-energizing, and performing maintenance on a low-voltage electrical distribution panel.",
+      "version": "1.0",
+      "mode": "VR",
+      "estimatedDurationMin": 30,
+      "language": "en",
+      "taskCount": 3,
+      "stepCount": 10,
+      "icon": "⚡",
+      "jsonPath": "Training/DummyData/training_003",
+      "thumbnail": "Prefabs/Media/testImage1",
+      "tags": ["Electrical", "Safety", "Panel"]
+    }
+  ]
+}

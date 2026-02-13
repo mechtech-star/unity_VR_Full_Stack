@@ -1,0 +1,34 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements"
+         editor-extension-mode="False">
+    <Style src="project://database/Assets/UI/main.uss"/>
+    <!-- Root -->
+    <ui:VisualElement class="root">
+        <!-- Header -->
+        <ui:VisualElement class="header">
+            <ui:Button name="menuButton" class="menu-button" text="☰" />
+            <ui:Label name="titleLabel" class="title" text="Module Title" />
+        </ui:VisualElement>
+        <!-- Body -->
+        <ui:VisualElement class="body">
+            <ui:Label name="contentText"
+                      class="content-text"
+                      text="This is where your step or module content will appear." />
+            <!-- Dynamic question-choice buttons are injected here by StepManager -->
+            <ui:VisualElement name="questionContainer" class="question-container hidden" />
+        </ui:VisualElement>
+        <!-- Footer -->
+        <ui:VisualElement name="footer" class="footer">
+            <ui:Button name="backButton" class="nav-button first" text="Back" />
+            <ui:VisualElement name="actionContainer" class="action-container" />
+            <ui:Button name="nextButton" class="nav-button primary" text="Next" />
+        </ui:VisualElement>
+        <!-- Menu Overlay -->
+        <ui:VisualElement name="menuOverlay" class="menu-overlay hidden">
+            <ui:Label text="Tasks" class="menu-title" />
+            <ui:ScrollView name="taskTree" class="task-tree" />
+            <ui:Button name="closeMenuButton"
+                       class="nav-button"
+                       text="Close" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

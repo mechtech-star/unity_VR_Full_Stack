@@ -1,0 +1,293 @@
+{
+  "moduleId": "PUMP_MAINT_001",
+  "title": "Centrifugal Pump Preventive Maintenance",
+  "version": "1.0",
+  "mode": "VR",
+  "estimatedDurationMin": 25,
+  "language": "en",
+  "tasks": [
+    {
+      "taskId": 1,
+      "taskTitle": "Task 1: Pre-Maintenance Preparation",
+      "steps": [
+        {
+          "stepId": 1,
+          "title": "Introduction to Pump Maintenance",
+          "description": "In this module, you will learn the step-by-step procedure for preventive maintenance of a centrifugal pump.",
+          "instructionType": "info",
+          "media": {
+            "type": "image",
+            "path": "Prefabs/Media/testImage1"
+          },
+          "model": null,
+          "interactions": null,
+          "completionCriteria": {
+            "type": "button_clicked",
+            "value": "next"
+          }
+        },
+        {
+          "stepId": 2,
+          "title": "Wear Personal Protective Equipment",
+          "description": "Ensure you are wearing gloves, helmet, and safety shoes before starting the maintenance process.",
+          "instructionType": "safety",
+          "media": {
+            "type": "image",
+            "path": "Prefabs/Media/testImage2"
+          },
+          "model": null,
+          "interactions": {
+            "requiredAction": "confirm_ppe",
+            "inputMethod": "ui_button",
+            "target": null,
+            "hand": null,
+            "attemptsAllowed": 0
+          },
+          "completionCriteria": {
+            "type": "user_confirmed",
+            "value": "ppe_worn"
+          }
+        }
+      ]
+    },
+    {
+      "taskId": 2,
+      "taskTitle": "Task 2: Pump Inspection & Disassembly",
+      "steps": [
+        {
+          "stepId": 3,
+          "title": "Identify Pump Components",
+          "description": "Observe the main components of the pump such as casing, impeller, shaft, and bearings.",
+          "instructionType": "observe",
+          "media": null,
+          "model": {
+            "path": "Prefabs/GLB/cube",
+            "animation": "cubeanimation1",
+            "spawn": {
+              "position": [0, 0, 2],
+              "rotation": [0, 180, 0],
+              "scale": 1.0
+            }
+          },
+          "interactions": {
+            "requiredAction": "highlight_components",
+            "inputMethod": null,
+            "target": "casing,impeller,shaft,bearing",
+            "hand": null,
+            "attemptsAllowed": 0
+          },
+          "completionCriteria": {
+            "type": "time_spent",
+            "value": "5"
+          },
+          "choices": null
+        },
+        {
+          "stepId": 4,
+          "title": "Pre-Inspection Check",
+          "description": "Before proceeding, which area of the pump do you want to inspect first?",
+          "instructionType": "question",
+          "media": null,
+          "model": null,
+          "interactions": null,
+          "completionCriteria": null,
+          "choices": [
+            { "label": "Inspect Impeller & Bearings", "goToStepId": 9 },
+            { "label": "Shut Down & Disassemble",     "goToStepId": 5 },
+            { "label": "Skip to Reassembly",           "goToStepId": 11 }
+          ]
+        },
+        {
+          "stepId": 5,
+          "title": "Shut Down the Pump",
+          "description": "Switch off the pump and isolate the power supply before disassembly.",
+          "instructionType": "action",
+          "media": {
+            "type": "image",
+            "path": "Prefabs/Media/testImage1"
+          },
+          "model": {
+            "path": "Prefabs/GLB/cube",
+            "animation": "cubeanimation2",
+            "spawn": {
+              "position": [0, 0, 2],
+              "rotation": [0, 180, 0],
+              "scale": 1.0
+            }
+          },
+          "interactions": {
+            "requiredAction": "press_switch",
+            "inputMethod": null,
+            "target": "main_power_switch",
+            "hand": null,
+            "attemptsAllowed": 0
+          },
+          "completionCriteria": {
+            "type": "interaction_completed",
+            "value": "press_switch"
+          }
+        },
+        {
+          "stepId": 6,
+          "title": "Drain Residual Fluid",
+          "description": "Open the drain valve to remove any residual fluid from the pump casing.",
+          "instructionType": "action",
+          "media": null,
+          "model": {
+            "path": "Prefabs/GLB/cube",
+            "animation": "cubeanimation1",
+            "spawn": {
+              "position": [0, 0, 2],
+              "rotation": [0, 180, 0],
+              "scale": 1.0
+            }
+          },
+          "interactions": {
+            "requiredAction": "rotate_valve",
+            "inputMethod": null,
+            "target": "drain_valve",
+            "hand": "right",
+            "attemptsAllowed": 0
+          },
+          "completionCriteria": {
+            "type": "animation_completed",
+            "value": "cubeanimation1"
+          }
+        },
+        {
+          "stepId": 7,
+          "title": "Remove Casing Bolts",
+          "description": "Loosen and remove all casing bolts using a spanner in a criss-cross pattern.",
+          "instructionType": "action",
+          "media": null,
+          "model": {
+            "path": "Prefabs/GLB/cube",
+            "animation": "cubeanimation2",
+            "spawn": {
+              "position": [0, 0, 2],
+              "rotation": [0, 180, 0],
+              "scale": 1.0
+            }
+          },
+          "interactions": {
+            "requiredAction": "grab_and_rotate",
+            "inputMethod": null,
+            "target": "casing_bolt",
+            "hand": null,
+            "attemptsAllowed": 3
+          },
+          "completionCriteria": {
+            "type": "animation_completed",
+            "value": "cubeanimation2"
+          }
+        }
+      ]
+    },
+    {
+      "taskId": 3,
+      "taskTitle": "Task 3: Maintenance & Reassembly",
+      "steps": [
+        {
+          "stepId": 8,
+          "title": "Inspect Impeller Condition",
+          "description": "Visually inspect the impeller for signs of wear, corrosion, or damage.",
+          "instructionType": "inspect",
+          "media": {
+            "type": "image",
+            "path": "Prefabs/Media/testImage2"
+          },
+          "model": {
+            "path": "Prefabs/GLB/cube",
+            "animation": "cubeanimation1",
+            "spawn": {
+              "position": [0, 0, 2],
+              "rotation": [0, 0, 0],
+              "scale": 1.5
+            }
+          },
+          "interactions": {
+            "requiredAction": "gaze_focus",
+            "inputMethod": null,
+            "target": "impeller",
+            "hand": null,
+            "attemptsAllowed": 0
+          },
+          "completionCriteria": {
+            "type": "time_spent",
+            "value": "6"
+          }
+        },
+        {
+          "stepId": 9,
+          "title": "Lubricate Bearings",
+          "description": "Apply the recommended lubricant to the pump bearings.",
+          "instructionType": "action",
+          "media": null,
+          "model": {
+            "path": "Prefabs/GLB/cube",
+            "animation": "cubeanimation2",
+            "spawn": {
+              "position": [0, 0, 2],
+              "rotation": [0, 180, 0],
+              "scale": 1.0
+            }
+          },
+          "interactions": {
+            "requiredAction": "apply_lubricant",
+            "inputMethod": null,
+            "target": "bearing",
+            "hand": null,
+            "attemptsAllowed": 0
+          },
+          "completionCriteria": {
+            "type": "animation_completed",
+            "value": "cubeanimation2"
+          }
+        },
+        {
+          "stepId": 10,
+          "title": "Reassemble Pump",
+          "description": "Reassemble the pump by tightening the casing bolts securely.",
+          "instructionType": "action",
+          "media": null,
+          "model": {
+            "path": "Prefabs/GLB/cube",
+            "animation": "cubeanimation1",
+            "spawn": {
+              "position": [0, 0, 2],
+              "rotation": [0, 180, 0],
+              "scale": 1.0
+            }
+          },
+          "interactions": {
+            "requiredAction": "grab_and_rotate",
+            "inputMethod": null,
+            "target": "casing_bolt",
+            "hand": null,
+            "attemptsAllowed": 0
+          },
+          "completionCriteria": {
+            "type": "animation_completed",
+            "value": "cubeanimation1"
+          }
+        },
+        {
+          "stepId": 11,
+          "title": "Maintenance Completed",
+          "description": "The preventive maintenance procedure is complete. You may now return the pump to operation.",
+          "instructionType": "completion",
+          "media": {
+            "type": "image",
+            "path": "Prefabs/Media/testImage1"
+          },
+          "model": null,
+          "interactions": null,
+          "completionCriteria": {
+            "type": "button_clicked",
+            "value": "finish"
+          }
+        }
+      ]
+    }
+  ]
+}
