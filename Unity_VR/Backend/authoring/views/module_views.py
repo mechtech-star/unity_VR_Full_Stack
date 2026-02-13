@@ -51,7 +51,12 @@ class StepCreateView(generics.CreateAPIView):
         last_index = (
             task.steps.aggregate(max_idx=models.Max("order_index")).get("max_idx") or 0
         )
-        serializer.save(module=module, task=task, order_index=last_index + 1)
+        new_order = last_index + 1
+        # Auto-generate title based on task and step order indices
+        title = self.request.data.get("title", "").strip()
+        if not title:
+            title = f"Step {task.order_index}.{new_order}"
+        serializer.save(module=module, task=task, order_index=new_order, title=title)
 
 
 class StepUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
@@ -98,9 +103,26 @@ class StepReorderView(APIView):
                 {"detail": "orderedStepIds must match module steps"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        auto_re = re.compile(r"^\s*Step\s+(\d+)\.(\d+)\s*$", re.IGNORECASE)
+
         with transaction.atomic():
+            # Build a mapping of step_id -> task for title updates
+            steps_qs = Step.objects.filter(module=module).select_related("task")
+            step_map = {str(s.id): s for s in steps_qs}
+
             for idx, step_id in enumerate(ordered_ids):
-                Step.objects.filter(pk=step_id, module=module).update(
-                    order_index=idx + 1
-                )
+                new_order = idx + 1
+                step_obj = step_map.get(str(step_id))
+                updates = {"order_index": new_order}
+
+                # Update auto-generated titles to reflect new position
+                if step_obj and step_obj.task:
+                    title = (step_obj.title or "").strip()
+                    m = auto_re.match(title)
+                    if m:
+                        updates["title"] = f"Step {step_obj.task.order_index}.{new_order}"
+
+                Step.objects.filter(pk=step_id, module=module).update(**updates)
+
         return Response({"detail": "reordered"}, status=status.HTTP_200_OK)

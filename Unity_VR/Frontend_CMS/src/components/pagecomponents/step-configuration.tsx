@@ -1,11 +1,80 @@
-import { X, Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Image, Box, MousePointerClick, CheckCircle2, HelpCircle } from 'lucide-react'
 import { useEffect, useState, useRef } from 'react'
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { Button } from '../ui/button'
-import type { Step, StepChoice, InstructionType, MediaType, UpdateStepRequest } from '../../types'
+import { Select, SelectItem } from '../ui/select'
+import type { Step, InstructionType, UpdateStepRequest, StepModel } from '../../types'
+import { BACKEND_BASE_URL } from '../../lib/api'
+import type { DetailTab } from './step-details-panel'
 
 const INSTRUCTION_TYPES: InstructionType[] = ['info', 'safety', 'observe', 'action', 'inspect', 'completion', 'question']
-const MEDIA_TYPES: MediaType[] = ['image', 'video']
-const COMPLETION_TYPES = ['button_clicked', 'animation_completed', 'interaction_completed', 'time_spent', 'user_confirmed']
+
+/* ── Offscreen snapshot hook — renders GLTF to a static data-URL image ── */
+function useModelSnapshot(url: string | null) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!url) { setDataUrl(null); return }
+
+    let disposed = false
+    const w = 240, h = 240
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+    renderer.setSize(w, h)
+    renderer.setPixelRatio(2)
+    renderer.setClearColor(0x000000, 0)
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+
+    const scene = new THREE.Scene()
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000)
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8))
+    const dir = new THREE.DirectionalLight(0xffffff, 1.2)
+    dir.position.set(5, 10, 7)
+    scene.add(dir)
+    const fill = new THREE.DirectionalLight(0xffffff, 0.4)
+    fill.position.set(-5, 0, -5)
+    scene.add(fill)
+
+    const loader = new (GLTFLoader as unknown as new () => { load: (url: string, onLoad: (gltf: { scene: InstanceType<typeof THREE.Object3D> }) => void, onProgress?: undefined, onError?: () => void) => void })()
+    loader.load(
+      url,
+      (gltf) => {
+        if (disposed) return
+        scene.add(gltf.scene)
+        const box = new THREE.Box3().setFromObject(gltf.scene)
+        const center = box.getCenter(new THREE.Vector3())
+        const size = box.getSize(new THREE.Vector3())
+        const maxDim = Math.max(size.x, size.y, size.z)
+        const dist = (maxDim / (2 * Math.tan((45 * Math.PI / 180) / 2))) * 1.6
+        camera.position.set(center.x + dist * 0.4, center.y + dist * 0.25, center.z + dist)
+        camera.lookAt(center)
+        camera.updateProjectionMatrix()
+        renderer.render(scene, camera)
+        setDataUrl(renderer.domElement.toDataURL())
+        renderer.dispose()
+        renderer.forceContextLoss()
+      },
+      undefined,
+      () => { if (!disposed) setDataUrl(null); renderer.dispose(); renderer.forceContextLoss() },
+    )
+
+    return () => { disposed = true; renderer.dispose(); renderer.forceContextLoss() }
+  }, [url])
+
+  return dataUrl
+}
+
+/* ── Small wrapper so card thumbnails are plain React (no live Canvas) ── */
+function ModelSnapshotCard({ url }: { url: string }) {
+  const snap = useModelSnapshot(url)
+  if (!snap) return <div className="flex items-center justify-center w-full h-full text-xs text-muted-foreground">Loading…</div>
+  return <img src={snap} alt="3D model" className="w-full h-full object-contain" />
+}
+
+/* ── Preview scene rendered inside the sheet Canvas ── */
+/* (moved to step-details-panel.tsx) */
 
 interface StepConfigurationProps {
   step: Step
@@ -13,8 +82,7 @@ interface StepConfigurationProps {
   onDelete?: () => void
   isSaving?: boolean
   assets?: Array<{ id: string; name?: string; originalFilename?: string; metadata?: Record<string, unknown>; type?: string; url?: string }>
-  /** All steps in the module for goToStep dropdowns */
-  allSteps?: Step[]
+  onDetailSelect?: (tab: DetailTab, modelIndex?: number) => void
 }
 
 export default function StepConfiguration({
@@ -23,21 +91,15 @@ export default function StepConfiguration({
   onDelete,
   isSaving = false,
   assets = [],
-  allSteps = [],
+  onDetailSelect,
 }: StepConfigurationProps) {
-  // Local state for debounced text fields
   const [localDescription, setLocalDescription] = useState(step.description || '')
   const [localTitle, setLocalTitle] = useState(step.title || '')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Local state for animation playback mode to provide immediate UI feedback
-  const [playbackMode, setPlaybackMode] = useState<string>(step.model_animation_loop ? 'loop' : 'once')
 
-  // Sync when step changes (navigation)
   useEffect(() => {
     setLocalDescription(step.description || '')
     setLocalTitle(step.title || '')
-    // Keep playbackMode in sync when switching steps
-    setPlaybackMode(step.model_animation_loop ? 'loop' : 'once')
   }, [step.id, step.description, step.title])
 
   const debouncedUpdate = (patch: UpdateStepRequest) => {
@@ -45,388 +107,212 @@ export default function StepConfiguration({
     debounceRef.current = setTimeout(() => onUpdate(patch), 600)
   }
 
-  // Cleanup timer on unmount
   useEffect(() => {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [])
 
-  const selectClass = 'w-full rounded border border-border px-3 py-2 bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent/20'
-  const inputClass = selectClass
+  const inputClass = 'w-full rounded-md border border-border px-3 py-2 bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring/30'
   const labelClass = 'block text-sm font-medium text-foreground mb-1'
 
-  // Model asset info
-  const modelAsset = step.model_asset ? assets.find(a => a.id === step.model_asset) : null
-  const modelAnimations = modelAsset?.metadata?.animations || []
-
-  // Media asset info
+  const getModelAsset = (model: StepModel) => model.asset ? assets.find(a => a.id === model.asset) : null
   const mediaAsset = step.media_asset ? assets.find(a => a.id === step.media_asset) : null
 
+  const addModel = () => {
+    const newModel: StepModel = {
+      asset: null,
+      animation: '',
+      position_x: 0, position_y: 0, position_z: 0,
+      rotation_x: 0, rotation_y: 0, rotation_z: 0,
+      scale: 1,
+      animation_loop: false,
+    }
+    const updatedModels = [...(step.models || []), newModel]
+    onUpdate({ models: updatedModels })
+    setTimeout(() => onDetailSelect?.('model', updatedModels.length - 1), 50)
+  }
+
+  const hasInteraction = !!(step.interaction_required_action || step.interaction_target)
+  const hasCompletion = !!step.completion_type
+
   return (
-    <div className="space-y-6 pb-8">
-      {/* ── Header ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-foreground">
-          {step.title || 'Untitled Step'}
-        </h3>
+    <div className="space-y-5 pb-8">
+      {/* ── Row 1: Title + Instruction Type ──────────────── */}
+      <div className="flex items-start gap-3">
+        <div className="flex-1">
+          <label className={labelClass}>Title</label>
+          <input
+            className={inputClass}
+            value={localTitle}
+            onChange={(e) => {
+              setLocalTitle(e.target.value)
+              debouncedUpdate({ title: e.target.value })
+            }}
+            placeholder="Step title"
+          />
+        </div>
+        <div className="w-44 shrink-0">
+          <label className={labelClass}>Instruction Type</label>
+          <Select
+            value={step.instruction_type}
+            onValueChange={(value) => onUpdate({ instruction_type: value as InstructionType })}
+          >
+            {INSTRUCTION_TYPES.map(t => (
+              <SelectItem key={t} value={t}>
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+              </SelectItem>
+            ))}
+          </Select>
+        </div>
         {onDelete && (
-          <Button variant="destructive" size="sm" onClick={onDelete} disabled={isSaving}>
-            <Trash2 className="w-4 h-4 mr-1" /> Delete Step
+          <Button variant="destructive" size="sm" className="mt-6 shrink-0" onClick={onDelete} disabled={isSaving}>
+            <Trash2 className="w-4 h-4" />
           </Button>
         )}
       </div>
 
-      {/* ── Title ──────────────────────────────────────────── */}
-      <div>
-        <label className={labelClass}>Title</label>
-        <input
-          className={inputClass}
-          value={localTitle}
-          onChange={(e) => {
-            setLocalTitle(e.target.value)
-            debouncedUpdate({ title: e.target.value })
-          }}
-          placeholder="Step title"
-        />
-      </div>
-
-      {/* ── Description ────────────────────────────────────── */}
+      {/* ── Row 2: Description ───────────────────────────── */}
       <div>
         <label className={labelClass}>Description</label>
         <textarea
-          className={`${inputClass} min-h-[120px] resize-y`}
+          className={`${inputClass} min-h-[300px] resize-y`}
           value={localDescription}
           onChange={(e) => {
-            setLocalDescription(e.target.value)
-            debouncedUpdate({ description: e.target.value })
+            const newValue = e.target.value.slice(0, 750)
+            setLocalDescription(newValue)
+            debouncedUpdate({ description: newValue })
           }}
           placeholder="Step description shown to the user..."
+          maxLength={750}
         />
+        <div className="text-xs text-muted-foreground mt-1">
+          {localDescription.length}/750 characters
+        </div>
       </div>
 
-      {/* ── Instruction Type ───────────────────────────────── */}
+      {/* ── Row 3: Media card ────────────────────────────── */}
       <div>
-        <label className={labelClass}>Instruction Type</label>
-        <select
-          className={selectClass}
-          value={step.instruction_type}
-          onChange={(e) => onUpdate({ instruction_type: e.target.value as InstructionType })}
+        <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Media</label>
+        <button
+          type="button"
+          onClick={() => onDetailSelect?.('media')}
+          className="relative flex items-center gap-3 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors p-3 w-[120px] h-[120px] text-left cursor-pointer"
         >
-          {INSTRUCTION_TYPES.map(t => (
-            <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* ── Media Section ──────────────────────────────────── */}
-      <fieldset className="border border-border rounded-lg p-4 space-y-3">
-        <legend className="text-sm font-semibold text-foreground px-2">Media</legend>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClass}>Type</label>
-            <select
-              className={selectClass}
-              value={step.media_type || ''}
-              onChange={(e) => {
-                const val = e.target.value as MediaType | ''
-                onUpdate({ media_type: val || null })
-              }}
-            >
-              <option value="">None</option>
-              {MEDIA_TYPES.map(t => (
-                <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className={labelClass}>Asset</label>
-            <select
-              className={selectClass}
-              value={step.media_asset || ''}
-              onChange={(e) => onUpdate({ media_asset: e.target.value || null })}
-            >
-              <option value="">None</option>
-              {assets
-                .filter(a => a.type === 'image' || a.type === 'video')
-                .map(a => (
-                  <option key={a.id} value={a.id}>{a.originalFilename || a.name || a.id}</option>
-                ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Media preview */}
-        {mediaAsset && (
-          <div className="rounded-md border border-border/50 p-2 bg-muted/30">
-            {step.media_type === 'video' ? (
-              <video src={mediaAsset.url} controls className="w-full max-w-xs rounded" />
-            ) : (
-              <img src={mediaAsset.url} alt="media preview" className="w-full max-w-xs rounded" />
-            )}
-            <div className="mt-1 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{mediaAsset.originalFilename || mediaAsset.name}</span>
-              <Button size="sm" variant="ghost" onClick={() => onUpdate({ media_asset: null, media_type: null })}>
-                <X className="w-3 h-3" />
-              </Button>
-            </div>
-          </div>
-        )}
-      </fieldset>
-
-      {/* ── 3D Model Section ───────────────────────────────── */}
-      <fieldset className="border border-border rounded-lg p-4 space-y-3">
-        <legend className="text-sm font-semibold text-foreground px-2">3D Model</legend>
-
-        <div>
-          <label className={labelClass}>Model Asset</label>
-          <select
-            className={selectClass}
-            value={step.model_asset || ''}
-            onChange={(e) => onUpdate({ model_asset: e.target.value || null })}
-          >
-            <option value="">None</option>
-            {assets
-              .filter(a => a.type === 'gltf' || a.type === 'model')
-              .map(a => (
-                <option key={a.id} value={a.id}>{a.originalFilename || a.name || a.id}</option>
-              ))}
-          </select>
-        </div>
-
-        {step.model_asset && (
-          <>
-            <div>
-              <label className={labelClass}>Animation</label>
-              {modelAnimations.length > 0 ? (
-                <select
-                  className={selectClass}
-                  value={step.model_animation || ''}
-                  onChange={(e) => onUpdate({ model_animation: e.target.value })}
-                >
-                  <option value="">(none)</option>
-                  {modelAnimations.map((a: { name: string }, i: number) => (
-                    <option key={i} value={a.name}>{a.name || `clip-${i}`}</option>
-                  ))}
-                </select>
+          {mediaAsset ? (
+            <div className="w-full h-full flex flex-col items-center justify-center">
+              {step.media_type === 'video' ? (
+                <video
+                  src={`${BACKEND_BASE_URL}${mediaAsset.url}`}
+                  className="w-full h-full object-cover rounded"
+                  muted
+                  preload="metadata"
+                />
               ) : (
-                <input
-                  className={inputClass}
-                  value={step.model_animation || ''}
-                  onChange={(e) => onUpdate({ model_animation: e.target.value })}
-                  placeholder="Animation clip name"
+                <img
+                  src={`${BACKEND_BASE_URL}${mediaAsset.url}`}
+                  alt="media thumbnail"
+                  className="w-full h-full object-cover rounded"
                 />
               )}
-            </div>
-
-            <div>
-              <label className={labelClass}>Animation Playback</label>
-              <select
-                className={selectClass}
-                value={playbackMode}
-                onChange={(e) => {
-                  const val = e.target.value
-                  setPlaybackMode(val)
-                  onUpdate({ model_animation_loop: val === 'loop' })
-                }}
-              >
-                <option value="once">Once</option>
-                <option value="loop">Loop</option>
-              </select>
-            </div>
-
-            <div>
-              <label className={labelClass}>Spawn Transform</label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['x', 'y', 'z'] as const).map(axis => (
-                  <div key={`pos-${axis}`}>
-                    <label className="text-xs text-muted-foreground">Pos {axis.toUpperCase()}</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      className={inputClass}
-                      value={step[`model_position_${axis}`] ?? 0}
-                      onChange={(e) => onUpdate({ [`model_position_${axis}` as keyof UpdateStepRequest]: parseFloat(e.target.value) || 0 })}
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-3 gap-2 mt-2">
-                {(['x', 'y', 'z'] as const).map(axis => (
-                  <div key={`rot-${axis}`}>
-                    <label className="text-xs text-muted-foreground">Rot {axis.toUpperCase()}</label>
-                    <input
-                      type="number"
-                      step="1"
-                      className={inputClass}
-                      value={step[`model_rotation_${axis}`] ?? 0}
-                      onChange={(e) => onUpdate({ [`model_rotation_${axis}` as keyof UpdateStepRequest]: parseFloat(e.target.value) || 0 })}
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="mt-2">
-                <label className="text-xs text-muted-foreground">Scale</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  className={inputClass}
-                  value={step.model_scale ?? 1}
-                  onChange={(e) => onUpdate({ model_scale: parseFloat(e.target.value) || 1 })}
-                />
+              <div className="absolute bottom-1 left-1 right-1 bg-black/50 text-white text-xs rounded px-1 truncate">
+                {mediaAsset.originalFilename || mediaAsset.name}
               </div>
             </div>
-          </>
-        )}
-      </fieldset>
+          ) : (
+            <>
+              <Image className="w-8 h-8 text-muted-foreground/40 shrink-0" />
+              <div className="text-sm text-muted-foreground">Add media</div>
+            </>
+          )}
+        </button>
+      </div>
 
-      {/* ── Interaction Section ─────────────────────────────── */}
-      <fieldset className="border border-border rounded-lg p-4 space-y-3">
-        <legend className="text-sm font-semibold text-foreground px-2">Interaction</legend>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClass}>Required Action</label>
-            <input
-              className={inputClass}
-              value={step.interaction_required_action || ''}
-              onChange={(e) => onUpdate({ interaction_required_action: e.target.value })}
-              placeholder="e.g., grab, press, rotate"
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Input Method</label>
-            <input
-              className={inputClass}
-              value={step.interaction_input_method || ''}
-              onChange={(e) => onUpdate({ interaction_input_method: e.target.value })}
-              placeholder="e.g., controller, hand"
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Target</label>
-            <input
-              className={inputClass}
-              value={step.interaction_target || ''}
-              onChange={(e) => onUpdate({ interaction_target: e.target.value })}
-              placeholder="Object to interact with"
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Hand</label>
-            <select
-              className={selectClass}
-              value={step.interaction_hand || ''}
-              onChange={(e) => onUpdate({ interaction_hand: e.target.value })}
-            >
-              <option value="">Any</option>
-              <option value="left">Left</option>
-              <option value="right">Right</option>
-            </select>
-          </div>
-          <div>
-            <label className={labelClass}>Attempts Allowed</label>
-            <input
-              type="number"
-              min="0"
-              className={inputClass}
-              value={step.interaction_attempts_allowed ?? 0}
-              onChange={(e) => onUpdate({ interaction_attempts_allowed: parseInt(e.target.value) || 0 })}
-            />
-          </div>
-        </div>
-      </fieldset>
-
-      {/* ── Completion Criteria ─────────────────────────────── */}
-      <fieldset className="border border-border rounded-lg p-4 space-y-3">
-        <legend className="text-sm font-semibold text-foreground px-2">Completion Criteria</legend>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClass}>Type</label>
-            <select
-              className={selectClass}
-              value={step.completion_type || ''}
-              onChange={(e) => onUpdate({ completion_type: e.target.value })}
-            >
-              <option value="">None</option>
-              {COMPLETION_TYPES.map(t => (
-                <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelClass}>Value</label>
-            <input
-              className={inputClass}
-              value={step.completion_value || ''}
-              onChange={(e) => onUpdate({ completion_value: e.target.value })}
-              placeholder="e.g., true, 5 (for time_spent)"
-            />
-          </div>
-        </div>
-      </fieldset>
-
-      {/* ── Branching Choices (for question type) ──────────── */}
-      {step.instruction_type === 'question' && (
-        <fieldset className="border border-border rounded-lg p-4 space-y-3">
-          <legend className="text-sm font-semibold text-foreground px-2">Choices</legend>
-
-          {(step.choices || []).map((choice, cIdx) => (
-            <div key={cIdx} className="flex items-center gap-2">
-              <input
-                className={`${inputClass} flex-1`}
-                value={choice.label}
-                onChange={(e) => {
-                  const updated = [...(step.choices || [])]
-                  updated[cIdx] = { ...updated[cIdx], label: e.target.value }
-                  onUpdate({ choices: updated })
-                }}
-                placeholder="Choice label"
-              />
-              <select
-                className={`${selectClass} w-48`}
-                value={choice.go_to_step || ''}
-                onChange={(e) => {
-                  const updated = [...(step.choices || [])]
-                  updated[cIdx] = { ...updated[cIdx], go_to_step: e.target.value || null }
-                  onUpdate({ choices: updated })
-                }}
+      {/* ── Row 4: 3D Models grid ────────────────────────── */}
+      <div>
+        <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">3D Models</label>
+        <div className="flex flex-wrap gap-3">
+          {(step.models || []).map((model, idx) => {
+            const asset = getModelAsset(model)
+            const modelUrl = asset?.url ? `${BACKEND_BASE_URL}${asset.url}` : null
+            return (
+              <button
+                key={model.id || idx}
+                type="button"
+                onClick={() => onDetailSelect?.('model', idx)}
+                className="flex flex-col items-center justify-center gap-2 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors p-2 w-[120px] h-[120px] cursor-pointer text-center relative overflow-hidden"
               >
-                <option value="">Next step</option>
-                {allSteps
-                  .filter(s => s.id !== step.id)
-                  .map(s => (
-                    <option key={s.id} value={s.id}>{s.title || s.id}</option>
-                  ))}
-              </select>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => {
-                  const updated = (step.choices || []).filter((_, i) => i !== cIdx)
-                  onUpdate({ choices: updated })
-                }}
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-          ))}
+                {modelUrl ? (
+                  <ModelSnapshotCard url={modelUrl} />
+                ) : (
+                  <Box className="w-7 h-7 text-muted-foreground" />
+                )}
+                <span className="absolute bottom-1 left-1 right-1 bg-black/50 text-white text-xs rounded px-1 truncate">
+                  {asset ? (asset.originalFilename || asset.name || `Model ${idx + 1}`) : `Model ${idx + 1}`}
+                </span>
+              </button>
+            )
+          })}
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const next: StepChoice[] = [...(step.choices || []), { label: '', go_to_step: null, order_index: (step.choices?.length || 0) }]
-              onUpdate({ choices: next })
-            }}
+          <button
+            type="button"
+            onClick={addModel}
+            className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border hover:border-foreground/30 bg-card/50 hover:bg-accent/30 transition-colors p-4 w-[120px] h-[120px] cursor-pointer"
           >
-            <Plus className="w-4 h-4 mr-1" /> Add Choice
-          </Button>
-        </fieldset>
-      )}
+            <Plus className="w-6 h-6 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Add Model</span>
+          </button>
+        </div>
+      </div>
 
-      {isSaving && (
-        <div className="text-xs text-muted-foreground">Saving...</div>
-      )}
+      {/* ── Row 5: Interaction + Completion + Choices ─────── */}
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={() => onDetailSelect?.('interaction')}
+          className="flex items-center gap-3 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors p-4 min-w-[160px] cursor-pointer text-left"
+        >
+          <MousePointerClick className="w-7 h-7 text-muted-foreground shrink-0" />
+          <div>
+            <div className="text-sm font-medium text-foreground">Interaction</div>
+            <div className="text-xs text-muted-foreground">
+              {hasInteraction
+                ? (step.interaction_required_action || step.interaction_target || 'Configured')
+                : 'Not set'}
+            </div>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onDetailSelect?.('completion')}
+          className="flex items-center gap-3 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors p-4 min-w-[160px] cursor-pointer text-left"
+        >
+          <CheckCircle2 className="w-7 h-7 text-muted-foreground shrink-0" />
+          <div>
+            <div className="text-sm font-medium text-foreground">Completion</div>
+            <div className="text-xs text-muted-foreground">
+              {hasCompletion ? step.completion_type!.replace(/_/g, ' ') : 'Not set'}
+            </div>
+          </div>
+        </button>
+
+        {step.instruction_type === 'question' && (
+          <button
+            type="button"
+            onClick={() => onDetailSelect?.('choices')}
+            className="flex items-center gap-3 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors p-4 min-w-[160px] cursor-pointer text-left"
+          >
+            <HelpCircle className="w-7 h-7 text-muted-foreground shrink-0" />
+            <div>
+              <div className="text-sm font-medium text-foreground">Choices</div>
+              <div className="text-xs text-muted-foreground">
+                {(step.choices?.length || 0)} choice{(step.choices?.length || 0) !== 1 ? 's' : ''}
+              </div>
+            </div>
+          </button>
+        )}
+      </div>
+
+      {isSaving && <div className="text-xs text-muted-foreground">Saving...</div>}
     </div>
   )
 }

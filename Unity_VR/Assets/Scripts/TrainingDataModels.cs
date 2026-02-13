@@ -39,9 +39,7 @@ public class TrainingStepData
     public string instructionType;   // info | safety | observe | action | inspect | completion | question
 
     public StepMediaData       media;
-    public StepModelData       model;
-    // Captures backend top-level model animation loop flag (model_animation_loop)
-    public bool               model_animation_loop;
+    public List<StepModelData> models;   // multiple 3D models per step
     public StepInteractionData interactions;
     public CompletionCriteria  completionCriteria;
 

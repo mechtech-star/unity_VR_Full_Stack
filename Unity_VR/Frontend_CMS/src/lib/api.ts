@@ -6,6 +6,7 @@
 import type { Module, Task, Step, Asset, CreateModuleRequest, UpdateStepRequest } from '../types'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
+const BACKEND_BASE_URL = API_BASE_URL.replace('/api', '')
 
 interface ApiResponse<T> {
   data?: T
@@ -142,12 +143,12 @@ class ApiClient {
   }
 
   // ── Step API ─────────────────────────────────────────────────────
-  async createStep(moduleId: string, taskId: string, title: string, orderIndex?: number): Promise<Step | null> {
+  async createStep(moduleId: string, taskId: string, title?: string, orderIndex?: number): Promise<Step | null> {
     return this.request<Step>(`/modules/${moduleId}/steps`, {
       method: 'POST',
       body: JSON.stringify({
         task: taskId,
-        title,
+        title: title || '',
         description: '',
         instruction_type: 'info',
         order_index: orderIndex ?? 0,
@@ -227,4 +228,5 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient(API_BASE_URL)
+export { BACKEND_BASE_URL }
 export type { ApiResponse }

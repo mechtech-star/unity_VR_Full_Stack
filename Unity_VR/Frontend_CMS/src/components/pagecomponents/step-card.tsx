@@ -31,8 +31,8 @@ export default function StepCard(props: StepCardProps) {
   const { step, index, indexOffset = 0, selected = false, onSelect, onRemove, isSaving = false, assets = [], multiSelectMode = false, isMultiSelected = false, onToggleSelect } = props
   
   const displayIndex = indexOffset > 0 
-    ? `${indexOffset}.${index + 1}` 
-    : `${index + 1}`
+    ? `${indexOffset}.${step.order_index}` 
+    : `${step.order_index}`
 
   const handleClick = (e: any) => {
     const target = e.target as HTMLElement | null
@@ -64,8 +64,11 @@ export default function StepCard(props: StepCardProps) {
 
         <div className="flex flex-col gap-2 h-full">
           <div className="flex items-center justify-between">
-            <div className="text-sm font-semibold text-foreground truncate flex-1">
-              {(step.title && step.title.trim()) ? step.title.trim() : `Step ${displayIndex}`}
+            <div className="flex items-center gap-2 truncate flex-1">
+              <span className="text-xs font-bold text-muted-foreground shrink-0">{displayIndex}</span>
+              <span className="text-sm font-semibold text-foreground truncate">
+                {(step.title && step.title.trim()) ? step.title.trim() : `Step ${displayIndex}`}
+              </span>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -95,10 +98,10 @@ export default function StepCard(props: StepCardProps) {
 
           {/* Bottom indicators */}
           <div className="flex items-center gap-2 mt-auto">
-            {step.model_asset && (
+            {step.models && step.models.length > 0 && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted rounded px-2 py-1">
                 <Box className="w-3 h-3" />
-                <span>{step.model_asset_filename || '3D Model'}</span>
+                <span>{step.models.length === 1 ? '1 3D Model' : `${step.models.length} 3D Models`}</span>
               </div>
             )}
             {step.media_asset && (

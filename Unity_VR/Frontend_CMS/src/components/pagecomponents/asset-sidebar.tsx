@@ -1,6 +1,6 @@
 import { Button } from '../ui/button'
 import { useState, useRef, useCallback } from 'react'
-import { Trash2, MoreHorizontal, UploadCloud, Search } from 'lucide-react'
+import { Trash2, MoreHorizontal, UploadCloud, Search, FolderOpen, Settings2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -27,19 +27,15 @@ import { toast } from 'sonner'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 
+import StepDetailsPanel, { type DetailTab } from './step-details-panel'
+import type { Step as StepType, UpdateStepRequest } from '../../types'
+
 type Model = {
   id: string
   name?: string
   uploadedAt?: string
   originalFilename?: string
   created_at?: string
-}
-
-type Step = {
-  id: string
-  title: string
-  content: string
-  model?: string
 }
 
 interface AssetSidebarProps {
@@ -49,9 +45,22 @@ interface AssetSidebarProps {
   onUpload?: (files: FileList | File[]) => void
   showAssign?: boolean
   isLoading?: boolean
+  // Step details props
+  step?: StepType | null
+  onStepUpdate?: (patch: UpdateStepRequest) => void
+  assets?: Array<{ id: string; name?: string; originalFilename?: string; metadata?: Record<string, unknown>; type?: string; url?: string }>
+  allSteps?: StepType[]
+  activeDetailTab?: DetailTab | null
+  activeModelIndex?: number
+  onDetailTabChange?: (tab: DetailTab | null) => void
 }
 
-export default function AssetSidebar({ models, onAssignModel, onDelete, onUpload, showAssign = true, isLoading = false }: AssetSidebarProps) {
+export default function AssetSidebar({
+  models, onAssignModel, onDelete, onUpload, showAssign = true, isLoading = false,
+  step, onStepUpdate, assets = [], allSteps = [], activeDetailTab, activeModelIndex = -1, onDetailTabChange,
+}: AssetSidebarProps) {
+  const showDetails = !!(activeDetailTab && step && onStepUpdate)
+
   function formatUploaded(dateStr?: string) {
     if (!dateStr) return '—'
     const d = new Date(dateStr)
@@ -256,6 +265,52 @@ export default function AssetSidebar({ models, onAssignModel, onDelete, onUpload
 
   return (
     <aside className="col-span-4 h-full rounded-lg bg-card border flex flex-col overflow-hidden">
+      {/* ── Top toggle bar ── */}
+      {step && onStepUpdate && (
+        <div className="flex border-b shrink-0">
+          <button
+            type="button"
+            onClick={() => onDetailTabChange?.(null)}
+            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
+              !showDetails
+                ? 'text-foreground bg-card border-b-2 border-primary'
+                : 'text-muted-foreground hover:text-foreground bg-muted/30'
+            }`}
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            Assets
+          </button>
+          <button
+            type="button"
+            onClick={() => onDetailTabChange?.(activeDetailTab || 'media')}
+            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
+              showDetails
+                ? 'text-foreground bg-card border-b-2 border-primary'
+                : 'text-muted-foreground hover:text-foreground bg-muted/30'
+            }`}
+          >
+            <Settings2 className="w-3.5 h-3.5" />
+            Step Details
+          </button>
+        </div>
+      )}
+
+      {/* ── Step Details Panel ── */}
+      {showDetails ? (
+        <div className="flex-1 overflow-hidden">
+          <StepDetailsPanel
+            step={step!}
+            onUpdate={onStepUpdate!}
+            assets={assets}
+            allSteps={allSteps}
+            activeTab={activeDetailTab!}
+            activeModelIndex={activeModelIndex}
+            onTabChange={(tab) => onDetailTabChange?.(tab)}
+            onClose={() => onDetailTabChange?.(null)}
+          />
+        </div>
+      ) : (
+      /* ── Assets View (original) ── */
       <div className="flex-1 overflow-y-auto hide-scrollbar">
         <div className="text-card-foreground rounded-lg p-2">
           <div className="flex flex-col p-3 pb-6 pt-4 border-b sticky top-0 bg-card/80 backdrop-blur-md z-10">
@@ -346,6 +401,7 @@ export default function AssetSidebar({ models, onAssignModel, onDelete, onUpload
           </div>
         </div>
       </div>
+      )}
 
       <Dialog open={conflictOpen} onOpenChange={setConflictOpen}>
         <DialogContent>

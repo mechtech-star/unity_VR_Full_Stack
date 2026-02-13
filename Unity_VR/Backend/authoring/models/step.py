@@ -39,7 +39,7 @@ class Step(models.Model):
     module = models.ForeignKey(Module, on_delete=models.CASCADE, related_name="steps")
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="steps", null=True, blank=True)
     order_index = models.PositiveIntegerField()
-    title = models.CharField(max_length=200)
+    title = models.CharField(max_length=200, blank=True, default="")
     description = models.TextField(blank=True, default="")
     instruction_type = models.CharField(
         max_length=20, choices=INSTRUCTION_TYPE_CHOICES, default="info"
@@ -69,6 +69,9 @@ class Step(models.Model):
     model_rotation_y = models.FloatField(default=180.0)
     model_rotation_z = models.FloatField(default=0.0)
     model_scale = models.FloatField(default=1.0)
+
+    # ── Multiple 3D Models (JSON array) ──────────────────────────────
+    models_data = models.JSONField(default=list, blank=True)
 
     # ── Interaction (nullable) ────────────────────────────────────────
     interaction_required_action = models.CharField(max_length=100, blank=True, default="")

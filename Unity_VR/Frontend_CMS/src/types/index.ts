@@ -28,6 +28,24 @@ export interface StepChoice {
   order_index: number
 }
 
+// ── 3D Model Configuration ───────────────────────────────────────────
+export interface StepModel {
+  id?: string  // For tracking individual models in the array
+  asset: string | null
+  asset_url?: string
+  asset_filename?: string
+  asset_metadata?: any
+  animation: string
+  position_x: number
+  position_y: number
+  position_z: number
+  rotation_x: number
+  rotation_y: number
+  rotation_z: number
+  scale: number
+  animation_loop: boolean
+}
+
 // ── Step ─────────────────────────────────────────────────────────────
 export interface Step {
   id: string
@@ -44,20 +62,8 @@ export interface Step {
   media_asset_url?: string
   media_asset_filename?: string
 
-  // 3D Model
-  model_asset?: string | null
-  model_asset_url?: string
-  model_asset_filename?: string
-  model_asset_metadata?: any
-  model_animation: string
-  model_position_x: number
-  model_position_y: number
-  model_position_z: number
-  model_rotation_x: number
-  model_rotation_y: number
-  model_rotation_z: number
-  model_scale: number
-  model_animation_loop: boolean
+  // 3D Models (multiple models per step)
+  models: StepModel[]
 
   // Interaction
   interaction_required_action: string
@@ -138,16 +144,7 @@ export interface UpdateStepRequest {
   instruction_type?: InstructionType
   media_type?: MediaType | null
   media_asset?: string | null
-  model_asset?: string | null
-  model_animation?: string
-  model_position_x?: number
-  model_position_y?: number
-  model_position_z?: number
-  model_rotation_x?: number
-  model_rotation_y?: number
-  model_rotation_z?: number
-  model_scale?: number
-  model_animation_loop?: boolean
+  models?: StepModel[]
   interaction_required_action?: string
   interaction_input_method?: string
   interaction_target?: string

@@ -219,31 +219,34 @@ public class StepManager : MonoBehaviour
         // Description body
         contentText.text = step.description;
 
-        // ── 3D model ─────────────────────────────────────────────────
+        // ── 3D models (supports multiple per step) ─────────────────
         if (stepVisualController != null)
         {
-            if (step.model != null && !string.IsNullOrEmpty(step.model.path))
-            {
-                GameObject prefab = dataLoader.ResolvePrefab(step.model.path);
-                SpawnData spawn   = step.model.spawn;
-                AnimationClip[] clips = dataLoader.ResolveAnimationClips(step.model.path);
+            stepVisualController.Clear();
 
-                Debug.Log($"[StepManager] Showing step {step.stepId} model with animationLoop={step.model.animationLoop}");
-
-                stepVisualController.ShowStepVisual(
-                    prefab,
-                    step.model.animation,
-                    spawn != null ? spawn.Position : Vector3.zero,
-                    spawn != null ? spawn.Rotation : Quaternion.identity,
-                    spawn != null ? spawn.Scale    : 1f,
-                    step.model.path,
-                    clips,
-                    step.model.animationLoop
-                );
-            }
-            else
+            if (step.models != null && step.models.Count > 0)
             {
-                stepVisualController.Clear();
+                foreach (var model in step.models)
+                {
+                    if (model == null || string.IsNullOrEmpty(model.path)) continue;
+
+                    GameObject prefab = dataLoader.ResolvePrefab(model.path);
+                    SpawnData spawn   = model.spawn;
+                    AnimationClip[] clips = dataLoader.ResolveAnimationClips(model.path);
+
+                    Debug.Log($"[StepManager] Showing step {step.stepId} model '{model.path}' animationLoop={model.animationLoop}");
+
+                    stepVisualController.AddModel(
+                        prefab,
+                        model.animation,
+                        spawn != null ? spawn.Position : Vector3.zero,
+                        spawn != null ? spawn.Rotation : Quaternion.identity,
+                        spawn != null ? spawn.Scale    : 1f,
+                        model.path,
+                        clips,
+                        model.animationLoop
+                    );
+                }
             }
         }
 

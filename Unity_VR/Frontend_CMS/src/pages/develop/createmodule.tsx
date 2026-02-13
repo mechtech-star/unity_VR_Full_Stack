@@ -158,24 +158,16 @@ export default function CreateModule() {
         const task = tasks.find(t => t.id === taskId)
         if (!task) return
         
-        const stepCount = task.steps?.length || 0
-        
         setIsSaving(true)
         try {
             const newStep = (await apiClient.createStep(
                 moduleId,
                 taskId,
-                `Step ${task.order_index}.${stepCount + 1}`,
-                stepCount + 1
             )) as Step | null
             
             if (!newStep) return
             
-            setTasks(prev => prev.map(t => 
-                t.id === taskId 
-                    ? { ...t, steps: [...(t.steps || []), newStep] }
-                    : t
-            ))
+            await loadModule()
         } catch (err) {
             console.error('Failed to add step:', err)
             setError(`Failed to add step: ${err instanceof Error ? err.message : 'Unknown error'}`)

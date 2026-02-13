@@ -7,6 +7,7 @@ import StepConfiguration from '../../components/pagecomponents/step-configuratio
 import { apiClient } from '../../lib/api'
 import { deleteStepAndRefresh } from '../../lib/stepOperations'
 import type { Step, Module, Task, UpdateStepRequest } from '../../types'
+import type { DetailTab } from '../../components/pagecomponents/step-details-panel'
 
 export default function ConfigureStep() {
     const navigate = useNavigate()
@@ -17,6 +18,7 @@ export default function ConfigureStep() {
     const moduleName = searchParams.get('moduleName') ?? 'Module'
 
     const [step, setStep] = useState<Step | null>(null)
+    const [currentTask, setCurrentTask] = useState<Task | null>(null)
     const [taskSteps, setTaskSteps] = useState<Step[]>([])
     const [allSteps, setAllSteps] = useState<Step[]>([])
     const [allTasks, setAllTasks] = useState<Task[]>([])
@@ -24,6 +26,10 @@ export default function ConfigureStep() {
     const [isLoading, setIsLoading] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
+
+    // Detail panel state (lifted from step-configuration to share with sidebar)
+    const [activeDetailTab, setActiveDetailTab] = useState<DetailTab | null>(null)
+    const [activeModelIndex, setActiveModelIndex] = useState(-1)
 
     // Load assets
     useEffect(() => {
@@ -44,6 +50,8 @@ export default function ConfigureStep() {
     useEffect(() => {
         if (!moduleId || !stepId) return
         setIsLoading(true)
+        setActiveDetailTab(null)
+        setActiveModelIndex(-1)
         ;(async () => {
             try {
                 const module = (await apiClient.getModule(moduleId)) as Module | null
@@ -53,20 +61,30 @@ export default function ConfigureStep() {
                 }
 
                 setAllTasks(module.tasks || [])
+                setCurrentTask((module.tasks || []).find((t: Task) => t.id === taskId) || null)
 
                 // Collect all steps across all tasks for goToStep references
                 const every: Step[] = []
                 const currentTaskSteps: Step[] = []
 
-                // Normalize steps: ensure `model_animation_loop` is present
+                // Normalize steps: ensure models array is present and properly structured
                 for (const task of (module.tasks || [])) {
                     for (const raw of (task.steps || [])) {
                         const s = raw as any
                         const normalized: Step = {
                             ...s,
-                            model_animation_loop: (s.model_animation_loop !== undefined)
-                                ? s.model_animation_loop
-                                : (s.model?.loop !== undefined ? s.model.loop : false),
+                            models: s.models || (s.model_asset ? [{
+                                asset: s.model_asset,
+                                animation: s.model_animation || '',
+                                position_x: s.model_position_x || 0,
+                                position_y: s.model_position_y || 0,
+                                position_z: s.model_position_z || 0,
+                                rotation_x: s.model_rotation_x || 0,
+                                rotation_y: s.model_rotation_y || 0,
+                                rotation_z: s.model_rotation_z || 0,
+                                scale: s.model_scale || 1,
+                                animation_loop: s.model_animation_loop !== undefined ? s.model_animation_loop : false,
+                            }] : []),
                         }
                         every.push(normalized)
                         if (task.id === taskId) {
@@ -149,6 +167,16 @@ export default function ConfigureStep() {
         }
     }
 
+    function handleDetailSelect(tab: DetailTab, modelIndex?: number) {
+        setActiveDetailTab(tab)
+        setActiveModelIndex(modelIndex ?? -1)
+    }
+
+    function handleDetailTabChange(tab: DetailTab | null) {
+        setActiveDetailTab(tab)
+        if (!tab) setActiveModelIndex(-1)
+    }
+
     async function handleDeleteStep() {
         if (!step || !taskId) return
         const confirmDelete = window.confirm(`Delete step "${step.title}"?`)
@@ -205,7 +233,9 @@ export default function ConfigureStep() {
                         <div className="h-full rounded-lg border border-border bg-background flex flex-col overflow-hidden">
                             <div className="px-4 pt-4 shrink-0">
                                 <div className="flex items-center justify-between">
-                                    <h3 className="text-lg font-semibold text-foreground">Configure Step</h3>
+                                    <h3 className="text-lg font-semibold text-foreground">
+                                        Configure Step{currentTask ? ` ${currentTask.order_index}.${step.order_index}` : ''}
+                                    </h3>
                                     <div className="flex gap-2 items-center">
                                         <Button size="sm" variant="secondary" onClick={() => goToNeighbor(-1)} disabled={!canGoPrev}>
                                             Previous Step
@@ -229,7 +259,7 @@ export default function ConfigureStep() {
                                         onDelete={handleDeleteStep}
                                         isSaving={isSaving}
                                         assets={assets}
-                                        allSteps={allSteps}
+                                        onDetailSelect={handleDetailSelect}
                                     />
                                 </div>
                             </div>
@@ -241,6 +271,13 @@ export default function ConfigureStep() {
                             <AssetSidebar
                                 models={assets}
                                 showAssign={false}
+                                step={step}
+                                onStepUpdate={handleUpdate}
+                                assets={assets}
+                                allSteps={allSteps}
+                                activeDetailTab={activeDetailTab}
+                                activeModelIndex={activeModelIndex}
+                                onDetailTabChange={handleDetailTabChange}
                             />
                         </div>
                     </div>

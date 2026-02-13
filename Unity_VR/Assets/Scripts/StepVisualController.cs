@@ -1,11 +1,12 @@
 using UnityEngine;
 using UnityEngine.Playables;
 using UnityEngine.Animations;
+using System.Collections.Generic;
 
 /// <summary>
-/// Spawns and manages the 3D model for each training step.
-/// Now accepts spawn transform data (position, rotation, scale) from the JSON
-/// so every step can place the model independently.
+/// Spawns and manages 3D models for each training step.
+/// Supports multiple simultaneous models per step, each with
+/// independent transforms and animations.
 /// </summary>
 public class StepVisualController : MonoBehaviour
 {
@@ -13,33 +14,68 @@ public class StepVisualController : MonoBehaviour
     [Tooltip("Fallback parent when JSON spawn position is (0,0,0)")]
     public Transform spawnPoint;
 
-    GameObject currentInstance;
-    PlayableGraph animationGraph;
-    bool graphInitialized;
+    // ── Per-model tracking ───────────────────────────────────────────
+    struct ModelInstance
+    {
+        public GameObject gameObject;
+        public PlayableGraph graph;
+        public bool graphInitialized;
+        public AnimationClipPlayable clipPlayable;
+        public float clipLength;
+        public bool isLooping;
+    }
 
-    // Loop state — used by Update() to manually wrap playable time
-    AnimationClipPlayable activeClipPlayable;
-    float activeClipLength;
-    bool isLooping;
+    List<ModelInstance> activeModels = new List<ModelInstance>();
 
     /// <summary>
-    /// Spawn a prefab with explicit transform values from the training JSON.
-    /// If no spawnPoint override is needed, position/rotation come from JSON SpawnData.
+    /// Add a model to the current step's scene. Call once per model.
+    /// StepManager calls Clear() first, then AddModel() for each model in the step.
     /// </summary>
-    public void ShowStepVisual(
+    public void AddModel(
         GameObject glbPrefab,
         string     animationName,
         Vector3    position,
         Quaternion rotation,
-        float      scale)
+        float      scale,
+        string     modelResourcePath,
+        AnimationClip[] preloadedClips = null,
+        bool       loop = false)
     {
-        ShowStepVisual(glbPrefab, animationName, position, rotation, scale, null, null);
+        if (glbPrefab == null)
+        {
+            Debug.LogWarning("[StepVisualController] No GLB prefab — skipping this model.");
+            return;
+        }
+
+        // Use spawnPoint as origin offset if provided; otherwise use world origin
+        Vector3 basePos       = spawnPoint != null ? spawnPoint.position : Vector3.zero;
+        Quaternion baseRot    = spawnPoint != null ? spawnPoint.rotation : Quaternion.identity;
+
+        Vector3 finalPos      = basePos + position;
+        Quaternion finalRot   = baseRot * rotation;
+
+        var instance = Instantiate(glbPrefab, finalPos, finalRot);
+        // Ensure the instance is active (template objects from glTFast may be under a deactivated root)
+        instance.SetActive(true);
+        instance.transform.localScale = Vector3.one * scale;
+
+        var mi = new ModelInstance
+        {
+            gameObject = instance,
+            graph = default,
+            graphInitialized = false,
+            clipPlayable = default,
+            clipLength = 0f,
+            isLooping = false
+        };
+
+        PlayAnimation(ref mi, animationName, modelResourcePath, preloadedClips, loop);
+        activeModels.Add(mi);
     }
 
     /// <summary>
-    /// Full overload with model resource path and optional pre-loaded animation clips.
-    /// When preloadedClips is provided (e.g. from glTFast URLloading), those are used directly.
-    /// Otherwise clips are loaded from Resources via modelResourcePath.
+    /// Legacy single-model overload — keeps backward-compatibility.
+    /// Clears all models first and adds one.
     /// </summary>
     public void ShowStepVisual(
         GameObject glbPrefab,
@@ -52,59 +88,34 @@ public class StepVisualController : MonoBehaviour
         bool       loop = false)
     {
         Clear();
-
-        if (glbPrefab == null)
-        {
-            Debug.LogWarning("[StepVisualController] No GLB prefab for this step.");
-            return;
-        }
-
-        // Use spawnPoint as origin offset if provided; otherwise use world origin
-        Vector3 basePos       = spawnPoint != null ? spawnPoint.position : Vector3.zero;
-        Quaternion baseRot    = spawnPoint != null ? spawnPoint.rotation : Quaternion.identity;
-
-        Vector3 finalPos      = basePos + position;
-        Quaternion finalRot   = baseRot * rotation;
-
-        currentInstance = Instantiate(glbPrefab, finalPos, finalRot);
-        // Ensure the instance is active (template objects from glTFast may be under a deactivated root)
-        currentInstance.SetActive(true);
-        currentInstance.transform.localScale = Vector3.one * scale;
-
-        PlayAnimation(animationName, modelResourcePath, preloadedClips, loop);
+        AddModel(glbPrefab, animationName, position, rotation, scale, modelResourcePath, preloadedClips, loop);
     }
 
-    /// <summary>
-    /// Legacy overload — keeps backward-compatibility with any code that
-    /// does not supply spawn data.
-    /// </summary>
+    public void ShowStepVisual(
+        GameObject glbPrefab,
+        string     animationName,
+        Vector3    position,
+        Quaternion rotation,
+        float      scale)
+    {
+        ShowStepVisual(glbPrefab, animationName, position, rotation, scale, null, null);
+    }
+
     public void ShowStepVisual(GameObject glbPrefab, string animationName)
     {
-        ShowStepVisual(
-            glbPrefab,
-            animationName,
-            Vector3.zero,
-            Quaternion.identity,
-            1f
-        );
+        ShowStepVisual(glbPrefab, animationName, Vector3.zero, Quaternion.identity, 1f);
     }
 
     public void Clear()
     {
-        isLooping = false;
-        activeClipLength = 0f;
-
-        if (currentInstance != null)
+        foreach (var mi in activeModels)
         {
-            Destroy(currentInstance);
-            currentInstance = null;
+            if (mi.gameObject != null)
+                Destroy(mi.gameObject);
+            if (mi.graphInitialized && mi.graph.IsValid())
+                mi.graph.Destroy();
         }
-
-        if (graphInitialized)
-        {
-            animationGraph.Destroy();
-            graphInitialized = false;
-        }
+        activeModels.Clear();
     }
 
     void OnDestroy()
@@ -113,27 +124,28 @@ public class StepVisualController : MonoBehaviour
     }
 
     /// <summary>
-    /// Manually wrap the playable time when looping.
-    /// AnimationClipPlayable does NOT automatically loop — its local time
-    /// advances past the clip length and the clip freezes on the last frame.
-    /// We reset the time using modulo so it keeps cycling.
+    /// Manually wrap playable time for any looping models.
     /// </summary>
     void Update()
     {
-        if (!isLooping || !graphInitialized) return;
-        if (!animationGraph.IsValid() || !animationGraph.IsPlaying()) return;
-
-        double time = activeClipPlayable.GetTime();
-        if (time >= activeClipLength)
+        for (int i = 0; i < activeModels.Count; i++)
         {
-            activeClipPlayable.SetTime(time % activeClipLength);
+            var mi = activeModels[i];
+            if (!mi.isLooping || !mi.graphInitialized) continue;
+            if (!mi.graph.IsValid() || !mi.graph.IsPlaying()) continue;
+
+            double time = mi.clipPlayable.GetTime();
+            if (time >= mi.clipLength)
+            {
+                mi.clipPlayable.SetTime(time % mi.clipLength);
+            }
         }
     }
 
     // ── Animation helpers ────────────────────────────────────────────
-    void PlayAnimation(string animationName, string modelResourcePath, AnimationClip[] preloadedClips, bool loop)
+    void PlayAnimation(ref ModelInstance mi, string animationName, string modelResourcePath, AnimationClip[] preloadedClips, bool loop)
     {
-        if (currentInstance == null) return;
+        if (mi.gameObject == null) return;
 
         // 1. Use pre-loaded clips (from glTFast URL loading) if available
         AnimationClip[] clips = preloadedClips;
@@ -192,19 +204,17 @@ public class StepVisualController : MonoBehaviour
         }
 
         // Set wrap mode based on loop flag.
-        // Clips are already non-legacy (converted at cache time in TrainingDataLoader).
         selected.wrapMode = loop ? WrapMode.Loop : WrapMode.Once;
 
-        // Safety: ensure non-legacy for Playables API (should already be done)
+        // Safety: ensure non-legacy for Playables API
         if (selected.legacy)
         {
             Debug.LogWarning($"[StepVisualController] Clip '{selected.name}' was still legacy — converting.");
             selected.legacy = false;
         }
 
-        // Remove any residual legacy Animation component on the clone —
-        // it should already be stripped from the template, but be safe.
-        var legacyAnim = currentInstance.GetComponentInChildren<Animation>();
+        // Remove any residual legacy Animation component on the clone
+        var legacyAnim = mi.gameObject.GetComponentInChildren<Animation>();
         if (legacyAnim != null)
         {
             Debug.Log("[StepVisualController] Removing residual legacy Animation component from clone.");
@@ -212,48 +222,39 @@ public class StepVisualController : MonoBehaviour
         }
 
         // Ensure an Animator exists so Playables can drive the pose
-        var animator = currentInstance.GetComponentInChildren<Animator>();
+        var animator = mi.gameObject.GetComponentInChildren<Animator>();
         if (animator == null)
-            animator = currentInstance.AddComponent<Animator>();
-
-        if (graphInitialized)
-        {
-            animationGraph.Destroy();
-            graphInitialized = false;
-        }
+            animator = mi.gameObject.AddComponent<Animator>();
 
         try
         {
             Debug.Log($"[StepVisualController] Playing clip '{selected.name}' loop={loop} length={selected.length}s wrapMode={selected.wrapMode}");
-            animationGraph = PlayableGraph.Create("StepAnimationGraph");
-            animationGraph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
-            var output = AnimationPlayableOutput.Create(animationGraph, "Animation", animator);
-            var clipPlayable = AnimationClipPlayable.Create(animationGraph, selected);
+            mi.graph = PlayableGraph.Create("StepAnimationGraph");
+            mi.graph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
+            var output = AnimationPlayableOutput.Create(mi.graph, "Animation", animator);
+            var clipPlayable = AnimationClipPlayable.Create(mi.graph, selected);
 
-            // For looping, set an infinite duration so the graph never
-            // considers the playable "done" and keeps evaluating.
-            // The actual time-wrap is handled in Update().
             if (loop)
                 clipPlayable.SetDuration(double.MaxValue);
 
             output.SetSourcePlayable(clipPlayable);
-            animationGraph.Play();
-            graphInitialized = true;
+            mi.graph.Play();
+            mi.graphInitialized = true;
 
             // Store loop state for Update() time-wrapping
-            activeClipPlayable = clipPlayable;
-            activeClipLength = selected.length;
-            isLooping = loop;
+            mi.clipPlayable = clipPlayable;
+            mi.clipLength = selected.length;
+            mi.isLooping = loop;
 
-            Debug.Log($"[StepVisualController] Graph playing: {animationGraph.IsPlaying()}, " +
-                      $"clip duration={selected.length}s, playable duration={clipPlayable.GetDuration()}, isLooping={isLooping}");
+            Debug.Log($"[StepVisualController] Graph playing: {mi.graph.IsPlaying()}, " +
+                      $"clip duration={selected.length}s, playable duration={clipPlayable.GetDuration()}, isLooping={mi.isLooping}");
         }
         catch (System.Exception ex)
         {
             Debug.LogError($"[StepVisualController] Playable animation failed: {ex.Message}");
-            if (animationGraph.IsValid())
-                animationGraph.Destroy();
-            graphInitialized = false;
+            if (mi.graph.IsValid())
+                mi.graph.Destroy();
+            mi.graphInitialized = false;
         }
     }
 }

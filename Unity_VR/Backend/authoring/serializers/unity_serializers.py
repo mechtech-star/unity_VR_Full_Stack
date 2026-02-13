@@ -3,7 +3,7 @@ Unity-specific serializers that produce JSON matching the Unity runtime contract
 These are read-only serializers used by the Unity API endpoints.
 """
 from rest_framework import serializers
-from authoring.models import Module, Task, Step, StepChoice
+from authoring.models import Module, Task, Step, StepChoice, Asset
 
 
 class UnityModuleCatalogSerializer(serializers.Serializer):
@@ -78,7 +78,7 @@ class UnityModuleDetailSerializer(serializers.Serializer):
                     "description": step.description or "",
                     "instructionType": step.instruction_type,
                     "media": self._serialize_media(step),
-                    "model": self._serialize_model(step),
+                    "models": self._serialize_models(step),
                     "interactions": self._serialize_interactions(step),
                     "completionCriteria": self._serialize_completion(step),
                 }
@@ -124,27 +124,57 @@ class UnityModuleDetailSerializer(serializers.Serializer):
             "path": step.media_asset.file.url if step.media_asset.file else "",
         }
 
-    def _serialize_model(self, step):
-        if not step.model_asset:
-            return None
-        return {
-            "path": step.model_asset.file.url if step.model_asset.file else "",
-            "animation": step.model_animation or "",
-            "animationLoop": step.model_animation_loop,
-            "spawn": {
-                "position": [
-                    step.model_position_x,
-                    step.model_position_y,
-                    step.model_position_z,
-                ],
-                "rotation": [
-                    step.model_rotation_x,
-                    step.model_rotation_y,
-                    step.model_rotation_z,
-                ],
-                "scale": step.model_scale,
-            },
-        }
+    def _serialize_models(self, step):
+        """Always returns a list of model objects (possibly empty)."""
+        result = []
+        models = getattr(step, 'models_data', [])
+        if models:
+            for model in models:
+                if not model.get("asset"):
+                    continue
+                try:
+                    asset = Asset.objects.get(id=model["asset"])
+                    result.append({
+                        "path": asset.file.url if asset.file else "",
+                        "animation": model.get("animation", ""),
+                        "animationLoop": model.get("animation_loop", False),
+                        "spawn": {
+                            "position": [
+                                model.get("position_x", 0),
+                                model.get("position_y", 0),
+                                model.get("position_z", 0),
+                            ],
+                            "rotation": [
+                                model.get("rotation_x", 0),
+                                model.get("rotation_y", 0),
+                                model.get("rotation_z", 0),
+                            ],
+                            "scale": model.get("scale", 1),
+                        },
+                    })
+                except Asset.DoesNotExist:
+                    continue
+        elif step.model_asset:
+            # Fallback to legacy single model for backward compatibility
+            result.append({
+                "path": step.model_asset.file.url if step.model_asset.file else "",
+                "animation": step.model_animation or "",
+                "animationLoop": step.model_animation_loop,
+                "spawn": {
+                    "position": [
+                        step.model_position_x,
+                        step.model_position_y,
+                        step.model_position_z,
+                    ],
+                    "rotation": [
+                        step.model_rotation_x,
+                        step.model_rotation_y,
+                        step.model_rotation_z,
+                    ],
+                    "scale": step.model_scale,
+                },
+            })
+        return result
 
     def _serialize_interactions(self, step):
         if not step.interaction_required_action:

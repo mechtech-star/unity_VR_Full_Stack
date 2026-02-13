@@ -60,33 +60,13 @@ public class TrainingDataLoader : MonoBehaviour
     }
 
     /// <summary>
-    /// Ensures step.model.animationLoop is set correctly.
-    /// The Unity JSON has "animationLoop" inside the nested "model" object
-    /// (deserialized directly into StepModelData.animationLoop). The top-level
-    /// model_animation_loop only exists in the CMS API responses. Use OR so
-    /// we never overwrite a correct true value with the missing default of false.
+    /// No-op: animationLoop is now directly inside each StepModelData from the API.
+    /// Kept as stub for backward compatibility with local JSON files that may
+    /// still have a top-level model_animation_loop field.
     /// </summary>
     void MapModelLoopFlags()
     {
-        if (ModuleData == null || ModuleData.tasks == null) return;
-
-        foreach (var task in ModuleData.tasks)
-        {
-            if (task?.steps == null) continue;
-            foreach (var step in task.steps)
-            {
-                if (step == null) continue;
-                if (step.model == null)
-                    step.model = new StepModelData();
-
-                // Use OR: model.animationLoop may already be true from nested JSON,
-                // model_animation_loop may be true from flat CMS JSON.
-                step.model.animationLoop = step.model.animationLoop || step.model_animation_loop;
-
-                Debug.Log($"[TrainingDataLoader] Step '{step.title}' (id={step.stepId}): " +
-                          $"model.animationLoop={step.model.animationLoop}, model_animation_loop={step.model_animation_loop}");
-            }
-        }
+        // Nothing to do — models[] already carry their own animationLoop flag.
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
@@ -147,7 +127,7 @@ public class TrainingDataLoader : MonoBehaviour
                 yield break;
             }
 
-            // Map any top-level model_animation_loop flags into nested StepModelData.animationLoop
+            // Map any legacy model flags (no-op for new API format)
             MapModelLoopFlags();
             Debug.Log("[TrainingDataLoader] After mapping model loop flags — sample step flags:");
             // Log first few steps for verification
@@ -156,7 +136,8 @@ public class TrainingDataLoader : MonoBehaviour
                 if (task?.steps == null) continue;
                 for (int s=0; s < Mathf.Min(task.steps.Count, 3); s++){
                     var step = task.steps[s];
-                    Debug.Log($"  Task {t} Step {s} id={step.stepId} model_animation_loop={step.model_animation_loop} model.animationLoop={step.model?.animationLoop}");
+                    int modelCount = step.models != null ? step.models.Count : 0;
+                    Debug.Log($"  Task {t} Step {s} id={step.stepId} models={modelCount}");
                 }
             }
 
@@ -192,7 +173,7 @@ public class TrainingDataLoader : MonoBehaviour
             return null;
         }
 
-        // Map any top-level model_animation_loop flags into nested StepModelData.animationLoop
+        // Map any legacy model flags (no-op for new API format)
         MapModelLoopFlags();
         Debug.Log("[TrainingDataLoader] After mapping model loop flags (local load):");
         if (ModuleData.tasks != null)
@@ -202,7 +183,8 @@ public class TrainingDataLoader : MonoBehaviour
                 if (task?.steps == null) continue;
                 for (int s=0; s < Mathf.Min(task.steps.Count, 3); s++){
                     var step = task.steps[s];
-                    Debug.Log($"  (local) Task {t} Step {s} id={step.stepId} model_animation_loop={step.model_animation_loop} model.animationLoop={step.model?.animationLoop}");
+                    int modelCount = step.models != null ? step.models.Count : 0;
+                    Debug.Log($"  (local) Task {t} Step {s} id={step.stepId} models={modelCount}");
                 }
             }
         }
@@ -339,8 +321,14 @@ public class TrainingDataLoader : MonoBehaviour
         {
             foreach (var step in task.steps)
             {
-                if (step.model != null && !string.IsNullOrEmpty(step.model.path))
-                    modelPaths.Add(step.model.path);
+                if (step.models != null)
+                {
+                    foreach (var m in step.models)
+                    {
+                        if (m != null && !string.IsNullOrEmpty(m.path))
+                            modelPaths.Add(m.path);
+                    }
+                }
 
                 if (step.media != null && !string.IsNullOrEmpty(step.media.path))
                 {
@@ -385,8 +373,14 @@ public class TrainingDataLoader : MonoBehaviour
         {
             foreach (var step in task.steps)
             {
-                if (step.model != null && !string.IsNullOrEmpty(step.model.path))
-                    ResolvePrefab(step.model.path);
+                if (step.models != null)
+                {
+                    foreach (var m in step.models)
+                    {
+                        if (m != null && !string.IsNullOrEmpty(m.path))
+                            ResolvePrefab(m.path);
+                    }
+                }
 
                 if (step.media != null && step.media.type == "image"
                     && !string.IsNullOrEmpty(step.media.path))
