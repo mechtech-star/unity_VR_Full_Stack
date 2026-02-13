@@ -1,34 +1,137 @@
 using UnityEngine;
+using UnityEngine.Networking;
+using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Threading.Tasks;
+using GLTFast;
 
 /// <summary>
-/// Loads the training JSON and resolves asset paths to actual Unity resources.
-/// 
-/// Current mode  : loads prefab / texture from Resources folders.
-/// Production    : swap this loader to fetch from a remote server / asset bundles.
-/// 
+/// Loads training JSON from a remote API (primary) or a local TextAsset (fallback).
+/// Resolves asset paths:
+///   • URL paths  (start with "/" or "http") → downloaded from the backend server
+///   • Resources paths → loaded from Assets/Resources/ as before
+///
+/// API Mode:
+///   Set apiBaseUrl in the Inspector (e.g. http://localhost:8000).
+///   Call LoadFromApi(jsonPath, callback) where jsonPath comes from the catalog.
+///
+/// Local Mode (fallback / editor):
+///   Assign trainingJson in the Inspector. Call Load() synchronously.
+///
 /// SETUP:
-///   1. Move (or keep) your GLB prefab into  Assets/Resources/Prefabs/GLB/
-///   2. Move (or keep) your images into       Assets/Resources/Prefabs/Media/
-///   3. Put the JSON TextAsset reference in the Inspector.
+///   1. 3D prefabs    in Assets/Resources/Prefabs/GLB/
+///   2. Image textures in Assets/Resources/Prefabs/Media/
 /// </summary>
 public class TrainingDataLoader : MonoBehaviour
 {
-    [Header("Training JSON (TextAsset)")]
-    [Tooltip("Drag the training_001.json file here")]
+    [Header("API Settings")]
+    [Tooltip("Base URL of the authoring backend (e.g. http://localhost:8000)")]
+    public string apiBaseUrl = "http://localhost:8000";
+
+    [Header("Local Fallback")]
+    [Tooltip("Optional: drag a local training JSON file here for offline use")]
     public TextAsset trainingJson;
 
     /// Parsed module data (pure JSON data)
     public TrainingModuleData ModuleData { get; private set; }
 
     // ── Resolved asset caches ────────────────────────────────────────
-    // key = Resources-relative path from JSON  →  value = loaded asset
-    Dictionary<string, GameObject>  prefabCache  = new Dictionary<string, GameObject>();
-    Dictionary<string, Texture2D>   textureCache = new Dictionary<string, Texture2D>();
+    Dictionary<string, GameObject>      prefabCache   = new Dictionary<string, GameObject>();
+    Dictionary<string, Texture2D>       textureCache  = new Dictionary<string, Texture2D>();
+    Dictionary<string, AnimationClip[]> animClipCache = new Dictionary<string, AnimationClip[]>();
+    List<GltfImport> loadedGltfImports = new List<GltfImport>();
+
+    // Hidden root that keeps template objects deactivated
+    Transform _templateRoot;
+    Transform TemplateRoot
+    {
+        get
+        {
+            if (_templateRoot == null)
+            {
+                var go = new GameObject("[GLB_Templates]");
+                go.SetActive(false);
+                DontDestroyOnLoad(go);
+                _templateRoot = go.transform;
+            }
+            return _templateRoot;
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────
+
+    /// <summary>Returns true if a path is a server URL rather than a Resources path.</summary>
+    bool IsUrlPath(string path)
+    {
+        return !string.IsNullOrEmpty(path)
+            && (path.StartsWith("/") || path.StartsWith("http"));
+    }
+
+    /// <summary>Prepends apiBaseUrl if the path is relative (starts with /).</summary>
+    string ResolveFullUrl(string path)
+    {
+        if (path.StartsWith("http")) return path;
+        return apiBaseUrl.TrimEnd('/') + path;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  API Loading (async)
+    // ══════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Call once to parse the JSON and pre-warm asset caches.
-    /// Returns the fully parsed TrainingModuleData.
+    /// Fetch a training module JSON from the API asynchronously.
+    /// jsonPath is the relative path from the catalog (e.g. "/api/unity/modules/fire-safety/").
+    /// Assets (GLB, textures) referenced in the JSON are pre-downloaded before the callback fires.
+    /// </summary>
+    public void LoadFromApi(string jsonPath, Action<TrainingModuleData> onComplete)
+    {
+        StartCoroutine(FetchModuleCoroutine(jsonPath, onComplete));
+    }
+
+    IEnumerator FetchModuleCoroutine(string jsonPath, Action<TrainingModuleData> onComplete)
+    {
+        string url = apiBaseUrl.TrimEnd('/') + jsonPath;
+        Debug.Log($"[TrainingDataLoader] Fetching module from: {url}");
+
+        using (var request = UnityWebRequest.Get(url))
+        {
+            yield return request.SendWebRequest();
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"[TrainingDataLoader] API request failed: {request.error} (URL: {url})");
+                onComplete?.Invoke(null);
+                yield break;
+            }
+
+            string json = request.downloadHandler.text;
+            Debug.Log($"[TrainingDataLoader] Raw API JSON (first 500 chars): {json.Substring(0, Mathf.Min(json.Length, 500))}");
+
+            ModuleData = JsonUtility.FromJson<TrainingModuleData>(json);
+
+            if (ModuleData == null || ModuleData.tasks == null)
+            {
+                Debug.LogError("[TrainingDataLoader] Failed to parse API response.");
+                onComplete?.Invoke(null);
+                yield break;
+            }
+
+            Debug.Log($"[TrainingDataLoader] Loaded module from API: {ModuleData.title} ({ModuleData.tasks.Count} tasks)");
+
+            // Pre-download all referenced assets before signalling ready
+            yield return PreloadAssetsCoroutine();
+
+            onComplete?.Invoke(ModuleData);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Local Loading (sync, fallback)
+    // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Parse training JSON from the local TextAsset. Returns null on failure.
     /// </summary>
     public TrainingModuleData Load()
     {
@@ -38,7 +141,6 @@ public class TrainingDataLoader : MonoBehaviour
             return null;
         }
 
-        // JsonUtility needs a wrapper because the root is an object
         ModuleData = JsonUtility.FromJson<TrainingModuleData>(trainingJson.text);
 
         if (ModuleData == null || ModuleData.tasks == null)
@@ -47,65 +149,179 @@ public class TrainingDataLoader : MonoBehaviour
             return null;
         }
 
-        Debug.Log($"[TrainingDataLoader] Loaded module: {ModuleData.title}  " +
-                  $"({ModuleData.tasks.Count} tasks)");
-
-        PreloadAssets();
+        Debug.Log($"[TrainingDataLoader] Loaded module (local): {ModuleData.title} ({ModuleData.tasks.Count} tasks)");
+        PreloadAssetsSync();
         return ModuleData;
     }
 
-    // ── Asset resolution ─────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════
+    //  Asset resolution (sync — works from cache or Resources)
+    // ══════════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// Resolve a model path from JSON → actual prefab (from Resources).
-    /// </summary>
-    public GameObject ResolvePrefab(string resourcePath)
+    public GameObject ResolvePrefab(string path)
     {
-        if (string.IsNullOrEmpty(resourcePath)) return null;
+        if (string.IsNullOrEmpty(path)) return null;
 
-        if (prefabCache.TryGetValue(resourcePath, out var cached))
+        if (prefabCache.TryGetValue(path, out var cached))
             return cached;
 
-        var prefab = Resources.Load<GameObject>(resourcePath);
-        if (prefab == null)
-            Debug.LogWarning($"[TrainingDataLoader] Prefab not found at Resources/{resourcePath}");
+        // Only try Resources.Load for non-URL paths
+        if (!IsUrlPath(path))
+        {
+            var prefab = Resources.Load<GameObject>(path);
+            if (prefab == null)
+                Debug.LogWarning($"[TrainingDataLoader] Prefab not found at Resources/{path}");
+            prefabCache[path] = prefab;
+            return prefab;
+        }
 
-        prefabCache[resourcePath] = prefab;
-        return prefab;
+        Debug.LogWarning($"[TrainingDataLoader] Prefab not in cache for URL path: {path} — was PreloadAssets called?");
+        return null;
+    }
+
+    public Texture2D ResolveTexture(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+
+        if (textureCache.TryGetValue(path, out var cached))
+            return cached;
+
+        // Only try Resources.Load for non-URL paths
+        if (!IsUrlPath(path))
+        {
+            var tex = Resources.Load<Texture2D>(path);
+            if (tex == null)
+                Debug.LogWarning($"[TrainingDataLoader] Texture not found at Resources/{path}");
+            textureCache[path] = tex;
+            return tex;
+        }
+
+        Debug.LogWarning($"[TrainingDataLoader] Texture not in cache for URL path: {path} — was PreloadAssets called?");
+        return null;
     }
 
     /// <summary>
-    /// Resolve a media image path from JSON → actual Texture2D (from Resources).
+    /// Returns cached animation clips for a model path (from glTFast import).
+    /// Falls back to Resources.LoadAll for local paths.
     /// </summary>
-    public Texture2D ResolveTexture(string resourcePath)
+    public AnimationClip[] ResolveAnimationClips(string path)
     {
-        if (string.IsNullOrEmpty(resourcePath)) return null;
+        if (string.IsNullOrEmpty(path)) return null;
 
-        if (textureCache.TryGetValue(resourcePath, out var cached))
+        if (animClipCache.TryGetValue(path, out var cached))
             return cached;
 
-        var tex = Resources.Load<Texture2D>(resourcePath);
-        if (tex == null)
-            Debug.LogWarning($"[TrainingDataLoader] Texture not found at Resources/{resourcePath}");
+        // Fallback: try loading from Resources (for local prefab paths)
+        if (!IsUrlPath(path))
+        {
+            var clips = Resources.LoadAll<AnimationClip>(path);
+            if (clips != null && clips.Length > 0)
+            {
+                animClipCache[path] = clips;
+                return clips;
+            }
+        }
 
-        textureCache[resourcePath] = tex;
-        return tex;
+        return null;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Cache management
+    // ══════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Clears downloaded asset caches (prefabs, textures, animations)
+    /// but keeps ModuleData intact so it can be read by StepManager.
+    /// </summary>
+    public void ClearAssetCaches()
+    {
+        // Destroy template GameObjects
+        foreach (var kvp in prefabCache)
+        {
+            if (kvp.Value != null)
+                Destroy(kvp.Value);
+        }
+        prefabCache.Clear();
+        textureCache.Clear();
+        animClipCache.Clear();
+
+        // Dispose glTFast imports
+        foreach (var gltf in loadedGltfImports)
+        {
+            if (gltf != null)
+                gltf.Dispose();
+        }
+        loadedGltfImports.Clear();
+
+        Debug.Log("[TrainingDataLoader] Asset caches cleared (module data preserved).");
     }
 
     /// <summary>
-    /// Clears cached assets so a fresh module can be loaded.
-    /// Called by AppFlowManager before switching modules.
+    /// Full reset — clears everything including module data.
+    /// Called when returning to the home page.
     /// </summary>
     public void ClearCaches()
     {
-        prefabCache.Clear();
-        textureCache.Clear();
+        ClearAssetCaches();
         ModuleData = null;
-        Debug.Log("[TrainingDataLoader] Caches cleared.");
+        Debug.Log("[TrainingDataLoader] All caches cleared.");
     }
 
-    // ── Pre-load all assets referenced by the JSON ───────────────────
-    void PreloadAssets()
+    // ══════════════════════════════════════════════════════════════════
+    //  Pre-loading (async — downloads URL assets)
+    // ══════════════════════════════════════════════════════════════════
+
+    IEnumerator PreloadAssetsCoroutine()
+    {
+        // Collect unique asset paths
+        var texturePaths = new HashSet<string>();
+        var modelPaths   = new HashSet<string>();
+
+        foreach (var task in ModuleData.tasks)
+        {
+            foreach (var step in task.steps)
+            {
+                if (step.model != null && !string.IsNullOrEmpty(step.model.path))
+                    modelPaths.Add(step.model.path);
+
+                if (step.media != null && !string.IsNullOrEmpty(step.media.path))
+                {
+                    if (step.media.type == "image")
+                        texturePaths.Add(step.media.path);
+                    // video handled separately at display time
+                }
+            }
+        }
+
+        Debug.Log($"[TrainingDataLoader] Pre-loading {modelPaths.Count} model(s), {texturePaths.Count} texture(s)…");
+
+        // Download textures
+        foreach (var path in texturePaths)
+        {
+            if (textureCache.ContainsKey(path)) continue;
+
+            if (IsUrlPath(path))
+                yield return DownloadTextureCoroutine(path);
+            else
+                ResolveTexture(path);       // sync Resources.Load
+        }
+
+        // Download / load GLB models
+        foreach (var path in modelPaths)
+        {
+            if (prefabCache.ContainsKey(path)) continue;
+
+            if (IsUrlPath(path))
+                yield return LoadGltfFromUrlCoroutine(path);
+            else
+                ResolvePrefab(path);        // sync Resources.Load
+        }
+
+        Debug.Log($"[TrainingDataLoader] Pre-loaded {prefabCache.Count} prefab(s), {textureCache.Count} texture(s), {animClipCache.Count} animation set(s).");
+    }
+
+    /// <summary>Synchronous preload — only for Resources-based local paths.</summary>
+    void PreloadAssetsSync()
     {
         foreach (var task in ModuleData.tasks)
         {
@@ -119,8 +335,80 @@ public class TrainingDataLoader : MonoBehaviour
                     ResolveTexture(step.media.path);
             }
         }
+        Debug.Log($"[TrainingDataLoader] Pre-loaded {prefabCache.Count} prefab(s), {textureCache.Count} texture(s).");
+    }
 
-        Debug.Log($"[TrainingDataLoader] Pre-loaded {prefabCache.Count} prefab(s), " +
-                  $"{textureCache.Count} texture(s).");
+    // ── Download a texture from URL ──────────────────────────────────
+
+    IEnumerator DownloadTextureCoroutine(string path)
+    {
+        string url = ResolveFullUrl(path);
+        Debug.Log($"[TrainingDataLoader] Downloading texture: {url}");
+
+        using (var request = UnityWebRequestTexture.GetTexture(url))
+        {
+            yield return request.SendWebRequest();
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"[TrainingDataLoader] Texture download failed: {request.error} ({url})");
+                yield break;
+            }
+
+            var tex = DownloadHandlerTexture.GetContent(request);
+            if (tex != null)
+            {
+                textureCache[path] = tex;
+                Debug.Log($"[TrainingDataLoader] Texture cached: {path}");
+            }
+        }
+    }
+
+    // ── Load a GLB model from URL via glTFast ────────────────────────
+
+    IEnumerator LoadGltfFromUrlCoroutine(string path)
+    {
+        string url = ResolveFullUrl(path);
+        Debug.Log($"[TrainingDataLoader] Loading GLB from: {url}");
+
+        var gltf = new GltfImport();
+        var loadTask = gltf.Load(url);
+
+        // Wait for the async Task to complete inside the coroutine
+        while (!loadTask.IsCompleted)
+            yield return null;
+
+        if (loadTask.IsFaulted || !loadTask.Result)
+        {
+            Debug.LogError($"[TrainingDataLoader] GLB load failed: {url} — {loadTask.Exception?.Message}");
+            gltf.Dispose();
+            yield break;
+        }
+
+        // Create a hidden template GameObject to hold the instantiated scene
+        var template = new GameObject($"GLB_{path.GetHashCode():X8}");
+        template.transform.SetParent(TemplateRoot, false);
+
+        bool instantiated = gltf.InstantiateMainScene(template.transform);
+        if (!instantiated)
+        {
+            Debug.LogError($"[TrainingDataLoader] GLB instantiation failed: {url}");
+            Destroy(template);
+            gltf.Dispose();
+            yield break;
+        }
+
+        prefabCache[path] = template;
+        loadedGltfImports.Add(gltf);
+
+        // Cache animation clips from the glTF import
+        var clips = gltf.GetAnimationClips();
+        if (clips != null && clips.Length > 0)
+        {
+            animClipCache[path] = clips;
+            Debug.Log($"[TrainingDataLoader] Cached {clips.Length} animation clip(s) for: {path}");
+        }
+
+        Debug.Log($"[TrainingDataLoader] GLB cached: {path} ({template.transform.childCount} root children)");
     }
 }

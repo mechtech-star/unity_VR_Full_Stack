@@ -132,9 +132,9 @@ public class StepManager : MonoBehaviour
         currentTaskIndex = 0;
         currentStepIndex = 0;
 
-        // Clear old assets
-        if (dataLoader != null)
-            dataLoader.ClearCaches();
+        // Note: asset caches are NOT cleared here — they were just populated
+        // by TrainingDataLoader.PreloadAssetsCoroutine() before this method
+        // was called. Full cleanup happens in ReturnHome() instead.
 
         // Clear any existing 3D model
         if (stepVisualController != null)
@@ -158,6 +158,10 @@ public class StepManager : MonoBehaviour
         if (mediaPanelController != null)
             mediaPanelController.Hide();
 
+        // Full cleanup of loaded data and asset caches
+        if (dataLoader != null)
+            dataLoader.ClearCaches();
+
         moduleData = null;
         OnReturnHome?.Invoke();
     }
@@ -171,13 +175,23 @@ public class StepManager : MonoBehaviour
             return;
         }
 
-        // Debug: show which TextAsset the loader currently holds (helps detect instance mismatches)
-        if (dataLoader.trainingJson == null)
-            Debug.LogWarning("[StepManager] TrainingDataLoader.trainingJson is null before Load() — check that AppFlowManager set the JSON and that both controllers reference the same loader instance.");
+        // If data was already loaded via API (ModuleData is populated), use it directly.
+        // Otherwise fall back to parsing the local TextAsset.
+        if (dataLoader.ModuleData != null)
+        {
+            Debug.Log("[StepManager] Using pre-loaded module data from API.");
+            moduleData = dataLoader.ModuleData;
+        }
+        else if (dataLoader.trainingJson != null)
+        {
+            Debug.Log($"[StepManager] Loading module from local TextAsset: {dataLoader.trainingJson.name}");
+            moduleData = dataLoader.Load();
+        }
         else
-            Debug.Log($"[StepManager] Loading module from TextAsset: {dataLoader.trainingJson.name}");
-
-        moduleData = dataLoader.Load();
+        {
+            Debug.LogError("[StepManager] No training data available — neither API data nor local TextAsset is set.");
+            return;
+        }
 
         if (moduleData == null) return;
 
@@ -212,6 +226,7 @@ public class StepManager : MonoBehaviour
             {
                 GameObject prefab = dataLoader.ResolvePrefab(step.model.path);
                 SpawnData spawn   = step.model.spawn;
+                AnimationClip[] clips = dataLoader.ResolveAnimationClips(step.model.path);
 
                 stepVisualController.ShowStepVisual(
                     prefab,
@@ -219,7 +234,8 @@ public class StepManager : MonoBehaviour
                     spawn != null ? spawn.Position : Vector3.zero,
                     spawn != null ? spawn.Rotation : Quaternion.identity,
                     spawn != null ? spawn.Scale    : 1f,
-                    step.model.path
+                    step.model.path,
+                    clips
                 );
             }
             else
@@ -228,21 +244,46 @@ public class StepManager : MonoBehaviour
             }
         }
 
-        // ── 2D media (image) ────────────────────────────────────────
+        // ── 2D media (image / video) ─────────────────────────────────
         if (mediaPanelController != null)
         {
-            if (step.media != null && step.media.type == "image")
+            if (step.media != null && !string.IsNullOrEmpty(step.media.path))
             {
-                Texture2D tex = dataLoader.ResolveTexture(step.media.path);
-                if (tex != null)
-                    mediaPanelController.ShowImage(tex);
-                else
+                Debug.Log($"[StepManager] Media: type={step.media.type}, path={step.media.path}");
+
+                if (step.media.type == "image")
+                {
+                    Texture2D tex = dataLoader.ResolveTexture(step.media.path);
+                    Debug.Log($"[StepManager] ResolveTexture result: {(tex != null ? $"{tex.width}x{tex.height}" : "NULL")}");
+                    if (tex != null)
+                        mediaPanelController.ShowImage(tex);
+                    else
+                        mediaPanelController.Hide();
+                }
+                else if (step.media.type == "video")
+                {
+                    // Video playback: pass the full URL to the media panel
+                    string videoUrl = step.media.path;
+                    if (videoUrl.StartsWith("/"))
+                        videoUrl = dataLoader.apiBaseUrl.TrimEnd('/') + videoUrl;
+                    Debug.Log($"[StepManager] Video URL: {videoUrl}");
+                    // TODO: implement mediaPanelController.ShowVideo(videoUrl)
                     mediaPanelController.Hide();
+                }
+                else
+                {
+                    mediaPanelController.Hide();
+                }
             }
             else
             {
+                Debug.Log("[StepManager] No media for this step.");
                 mediaPanelController.Hide();
             }
+        }
+        else
+        {
+            Debug.LogWarning("[StepManager] mediaPanelController is NULL — media panel will not display.");
         }
 
         // ── Question step (branching choices) ────────────────────────

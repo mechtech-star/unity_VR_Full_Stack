@@ -110,7 +110,7 @@ public class AppFlowManager : MonoBehaviour
             homePageController.Refresh();
     }
 
-    /// <summary>Load a module and switch to the training view.</summary>
+    /// <summary>Load a module from the API and switch to the training view.</summary>
     public void StartTraining(ModuleSummaryData moduleSummary)
     {
         if (dataLoader == null || stepManager == null)
@@ -119,28 +119,10 @@ public class AppFlowManager : MonoBehaviour
             return;
         }
 
-        // 1. Tell the data loader which JSON to load
-        TextAsset json = Resources.Load<TextAsset>(moduleSummary.jsonPath);
-        if (json == null)
-        {
-            Debug.LogError($"[AppFlowManager] Training JSON not found at Resources/{moduleSummary.jsonPath}");
-            return;
-        }
-
-        dataLoader.trainingJson = json;
-
         // Ensure StepManager uses the same TrainingDataLoader instance
-        if (stepManager != null)
-        {
-            stepManager.dataLoader = dataLoader;
-            Debug.Log($"[AppFlowManager] Assigned TrainingDataLoader to StepManager (loader instance={dataLoader.GetInstanceID()})");
-        }
-        else
-        {
-            Debug.LogWarning("[AppFlowManager] stepManager is null when starting training.");
-        }
+        stepManager.dataLoader = dataLoader;
 
-        // 2. Switch views
+        // 1. Switch views immediately (training UI will show while data loads)
         currentState = AppState.Training;
         if (homeView != null)       homeView.SetActive(false);
         if (trainingView != null)   trainingView.SetActive(true);
@@ -150,8 +132,20 @@ public class AppFlowManager : MonoBehaviour
         // Re-enable the spatial panel manipulator so it can be grabbed in training
         SetManipulatorInteractable(true);
 
-        // 3. Wait one frame for UIDocument visual trees to rebuild, then load
-        StartCoroutine(LoadModuleNextFrame(moduleSummary.title));
+        // 2. Fetch module JSON from the API asynchronously
+        Debug.Log($"[AppFlowManager] Loading module from API: {moduleSummary.jsonPath}");
+        dataLoader.LoadFromApi(moduleSummary.jsonPath, (data) =>
+        {
+            if (data == null)
+            {
+                Debug.LogError($"[AppFlowManager] Failed to load module from API: {moduleSummary.jsonPath}");
+                ShowHome();
+                return;
+            }
+
+            // 3. Wait one frame for UIDocument visual trees to rebuild, then load
+            StartCoroutine(LoadModuleNextFrame(moduleSummary.title));
+        });
     }
 
     IEnumerator LoadModuleNextFrame(string title)

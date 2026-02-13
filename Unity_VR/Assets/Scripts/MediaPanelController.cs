@@ -29,13 +29,19 @@ public class MediaPanelController : MonoBehaviour
         }
 
         var root = uiDocument.rootVisualElement;
+        if (root == null)
+        {
+            Debug.LogWarning("[MediaPanelController] rootVisualElement is null — UIDocument may not have rebuilt yet.");
+            return;
+        }
+
         mediaImage = root.Q<Image>("mediaImage");
         videoContainer = root.Q<VisualElement>("videoContainer");
 
         if (mediaImage == null)
-            Debug.LogError("[MediaPanelController] Could not find 'mediaImage' in media.uxml");
+            Debug.LogWarning("[MediaPanelController] Could not find 'mediaImage' in UXML.");
         if (videoContainer == null)
-            Debug.LogError("[MediaPanelController] Could not find 'videoContainer' in media.uxml");
+            Debug.LogWarning("[MediaPanelController] Could not find 'videoContainer' in UXML.");
     }
 
     public void ShowImage(Texture2D texture)
@@ -46,7 +52,14 @@ public class MediaPanelController : MonoBehaviour
 
         if (mediaImage == null || videoContainer == null)
         {
-            Debug.LogWarning("[MediaPanelController] ShowImage skipped — UI elements not found.");
+            Debug.LogWarning("[MediaPanelController] ShowImage skipped — UI elements not found after BindUIElements.");
+            return;
+        }
+
+        if (texture == null)
+        {
+            Debug.LogWarning("[MediaPanelController] ShowImage called with null texture.");
+            Hide();
             return;
         }
 
@@ -57,7 +70,7 @@ public class MediaPanelController : MonoBehaviour
         mediaImage.style.display = DisplayStyle.Flex;
         mediaImage.image = texture;
 
-        Debug.Log($"[MediaPanelController] Showing image: {texture.name}");
+        Debug.Log($"[MediaPanelController] Showing image: {texture.name} ({texture.width}x{texture.height})");
     }
 
     public void Hide()

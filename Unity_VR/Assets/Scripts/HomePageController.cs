@@ -1,8 +1,11 @@
 using UnityEngine;
+using UnityEngine.Networking;
 using UnityEngine.UIElements;
+using System.Collections;
 
 /// <summary>
 /// Populates the home page with module cards from the catalog JSON.
+/// Fetches the catalog from the backend API (primary) or a local TextAsset (fallback).
 /// Each card shows module info and a "Start" button that fires an event
 /// picked up by AppFlowManager to transition into the training view.
 /// </summary>
@@ -11,8 +14,12 @@ public class HomePageController : MonoBehaviour
     [Header("UI")]
     public UIDocument uiDocument;
 
-    [Header("Catalog")]
-    [Tooltip("Drag the module_catalog.json TextAsset here")]
+    [Header("API Settings")]
+    [Tooltip("Base URL of the authoring backend (e.g. http://localhost:8000)")]
+    public string apiBaseUrl = "http://localhost:8000";
+
+    [Header("Local Fallback")]
+    [Tooltip("Optional: drag a local module_catalog.json TextAsset here for offline use")]
     public TextAsset catalogJson;
 
     // ── Parsed data ──────────────────────────────────────────────────
@@ -48,28 +55,66 @@ public class HomePageController : MonoBehaviour
         // UIDocument rebuilds its visual tree after SetActive(false→true),
         // so re-query UI references every time we are enabled.
         BindUIElements();
-        // Try to load catalog from inspector assignment first.
-        // If not provided, attempt to load from Resources/Training/module_catalog
-        if (catalogJson == null)
+
+        // Fetch catalog from the API; falls back to local TextAsset on failure
+        StartCoroutine(LoadCatalogFromApi());
+    }
+
+    // ── Catalog loading (API) ────────────────────────────────────────
+    IEnumerator LoadCatalogFromApi()
+    {
+        string url = apiBaseUrl.TrimEnd('/') + "/api/unity/modules/";
+        Debug.Log($"[HomePageController] Fetching catalog from: {url}");
+
+        using (var request = UnityWebRequest.Get(url))
         {
-            var res = Resources.Load<TextAsset>("Training/module_catalog");
-            if (res != null)
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
             {
-                catalogJson = res;
-                Debug.Log("[HomePageController] Loaded catalog TextAsset from Resources/Training/module_catalog");
+                string json = request.downloadHandler.text;
+                try
+                {
+                    catalog = JsonUtility.FromJson<ModuleCatalogData>(json);
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogError($"[HomePageController] Failed to parse API catalog JSON: {ex.Message}");
+                    catalog = null;
+                }
+
+                if (catalog != null && catalog.modules != null)
+                {
+                    Debug.Log($"[HomePageController] Loaded catalog from API with {catalog.modules.Count} module(s).");
+                    BuildCards();
+                    yield break;
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"[HomePageController] API catalog request failed: {request.error}. Falling back to local.");
             }
         }
 
-        LoadCatalog();
+        // Fallback: load from local TextAsset
+        LoadCatalogLocal();
         BuildCards();
     }
 
-    // ── Catalog loading ──────────────────────────────────────────────
-    void LoadCatalog()
+    // ── Catalog loading (local fallback) ────────────────────────────
+    void LoadCatalogLocal()
     {
+        // Try inspector-assigned TextAsset, then Resources folder
         if (catalogJson == null)
         {
-            Debug.LogError("[HomePageController] No catalog JSON assigned! (also attempted Resources/Training/module_catalog)");
+            catalogJson = Resources.Load<TextAsset>("Training/module_catalog");
+            if (catalogJson != null)
+                Debug.Log("[HomePageController] Loaded catalog TextAsset from Resources/Training/module_catalog");
+        }
+
+        if (catalogJson == null)
+        {
+            Debug.LogError("[HomePageController] No catalog available (API failed and no local TextAsset found).");
             return;
         }
 
@@ -191,7 +236,7 @@ public class HomePageController : MonoBehaviour
     }
 
     // ── Public API ───────────────────────────────────────────────────
-    /// <summary>Refresh the card list (e.g. after catalog update or returning from training).</summary>
+    /// <summary>Refresh the card list (e.g. after returning from training).</summary>
     public void Refresh()
     {
         // Re-query UI elements from the live visual tree
@@ -203,15 +248,8 @@ public class HomePageController : MonoBehaviour
             return;
         }
 
-        // Reload catalog if needed
-        if (catalogJson == null)
-        {
-            var res = Resources.Load<TextAsset>("Training/module_catalog");
-            if (res != null) catalogJson = res;
-        }
-
-        LoadCatalog();
-        BuildCards();
+        // Re-fetch catalog from API
+        StartCoroutine(LoadCatalogFromApi());
     }
 
     public ModuleCatalogData GetCatalog() => catalog;

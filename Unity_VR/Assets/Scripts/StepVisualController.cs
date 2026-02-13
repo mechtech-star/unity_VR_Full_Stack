@@ -28,12 +28,13 @@ public class StepVisualController : MonoBehaviour
         Quaternion rotation,
         float      scale)
     {
-        ShowStepVisual(glbPrefab, animationName, position, rotation, scale, null);
+        ShowStepVisual(glbPrefab, animationName, position, rotation, scale, null, null);
     }
 
     /// <summary>
-    /// Full overload with model resource path so we can load AnimationClips from Resources
-    /// when the prefab has no AnimatorController or legacy Animation component.
+    /// Full overload with model resource path and optional pre-loaded animation clips.
+    /// When preloadedClips is provided (e.g. from glTFast URLloading), those are used directly.
+    /// Otherwise clips are loaded from Resources via modelResourcePath.
     /// </summary>
     public void ShowStepVisual(
         GameObject glbPrefab,
@@ -41,7 +42,8 @@ public class StepVisualController : MonoBehaviour
         Vector3    position,
         Quaternion rotation,
         float      scale,
-        string     modelResourcePath)
+        string     modelResourcePath,
+        AnimationClip[] preloadedClips = null)
     {
         Clear();
 
@@ -59,9 +61,11 @@ public class StepVisualController : MonoBehaviour
         Quaternion finalRot   = baseRot * rotation;
 
         currentInstance = Instantiate(glbPrefab, finalPos, finalRot);
+        // Ensure the instance is active (template objects from glTFast may be under a deactivated root)
+        currentInstance.SetActive(true);
         currentInstance.transform.localScale = Vector3.one * scale;
 
-        PlayAnimation(animationName, modelResourcePath);
+        PlayAnimation(animationName, modelResourcePath, preloadedClips);
     }
 
     /// <summary>
@@ -95,15 +99,31 @@ public class StepVisualController : MonoBehaviour
     }
 
     // ── Animation helpers ────────────────────────────────────────────
-    void PlayAnimation(string animationName, string modelResourcePath)
+    void PlayAnimation(string animationName, string modelResourcePath, AnimationClip[] preloadedClips)
     {
         if (currentInstance == null) return;
 
-        // Always play from GLB clips (no AnimatorController, no legacy Animation required).
-        // Load clips directly from the model's Resources path.
-        AnimationClip[] clips = null;
-        if (!string.IsNullOrEmpty(modelResourcePath))
+        // 1. Use pre-loaded clips (from glTFast URL loading) if available
+        AnimationClip[] clips = preloadedClips;
+
+        // 2. Fallback: load from Resources (for local prefab paths)
+        if ((clips == null || clips.Length == 0) && !string.IsNullOrEmpty(modelResourcePath))
             clips = Resources.LoadAll<AnimationClip>(modelResourcePath);
+
+        // 3. Fallback: try getting clips from the instantiated object's Animation component
+        if ((clips == null || clips.Length == 0) && currentInstance != null)
+        {
+            var legacyAnim = currentInstance.GetComponentInChildren<Animation>();
+            if (legacyAnim != null)
+            {
+                var clipList = new System.Collections.Generic.List<AnimationClip>();
+                foreach (AnimationState state in legacyAnim)
+                {
+                    if (state.clip != null) clipList.Add(state.clip);
+                }
+                if (clipList.Count > 0) clips = clipList.ToArray();
+            }
+        }
 
         if (clips == null || clips.Length == 0)
         {
@@ -113,6 +133,11 @@ public class StepVisualController : MonoBehaviour
             );
             return;
         }
+
+        // Log available clip names for debugging
+        Debug.Log($"[StepVisualController] Available clips ({clips.Length}): " +
+                  string.Join(", ", System.Array.ConvertAll(clips, c => c != null ? $"{c.name} (legacy={c.legacy})" : "null")));
+        Debug.Log($"[StepVisualController] Requested animation: '{animationName}'");
 
         // Select clip by name or default to first
         AnimationClip selected = null;
@@ -126,6 +151,19 @@ public class StepVisualController : MonoBehaviour
                     break;
                 }
             }
+            // If exact match failed, try case-insensitive contains
+            if (selected == null)
+            {
+                foreach (var clip in clips)
+                {
+                    if (clip != null && clip.name.IndexOf(animationName, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        Debug.Log($"[StepVisualController] Fuzzy-matched '{animationName}' → '{clip.name}'");
+                        selected = clip;
+                        break;
+                    }
+                }
+            }
         }
         if (selected == null)
             selected = clips[0];
@@ -134,6 +172,13 @@ public class StepVisualController : MonoBehaviour
         {
             Debug.LogWarning("[StepVisualController] Animation clip selection failed.");
             return;
+        }
+
+        // glTFast imports clips as legacy — must flip the flag for Playables API
+        if (selected.legacy)
+        {
+            Debug.Log($"[StepVisualController] Converting legacy clip '{selected.name}' for Playables.");
+            selected.legacy = false;
         }
 
         // Ensure an Animator exists so Playables can drive the pose
@@ -147,11 +192,21 @@ public class StepVisualController : MonoBehaviour
             graphInitialized = false;
         }
 
-        animationGraph = PlayableGraph.Create("StepAnimationGraph");
-        var output = AnimationPlayableOutput.Create(animationGraph, "Animation", animator);
-        var clipPlayable = AnimationClipPlayable.Create(animationGraph, selected);
-        output.SetSourcePlayable(clipPlayable);
-        animationGraph.Play();
-        graphInitialized = true;
+        try
+        {
+            animationGraph = PlayableGraph.Create("StepAnimationGraph");
+            var output = AnimationPlayableOutput.Create(animationGraph, "Animation", animator);
+            var clipPlayable = AnimationClipPlayable.Create(animationGraph, selected);
+            output.SetSourcePlayable(clipPlayable);
+            animationGraph.Play();
+            graphInitialized = true;
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[StepVisualController] Playable animation failed: {ex.Message}");
+            if (animationGraph.IsValid())
+                animationGraph.Destroy();
+            graphInitialized = false;
+        }
     }
 }
