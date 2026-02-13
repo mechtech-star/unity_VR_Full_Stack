@@ -57,6 +57,7 @@ export interface Step {
   model_rotation_y: number
   model_rotation_z: number
   model_scale: number
+  model_animation_loop: boolean
 
   // Interaction
   interaction_required_action: string
@@ -146,6 +147,7 @@ export interface UpdateStepRequest {
   model_rotation_y?: number
   model_rotation_z?: number
   model_scale?: number
+  model_animation_loop?: boolean
   interaction_required_action?: string
   interaction_input_method?: string
   interaction_target?: string

@@ -29,11 +29,15 @@ export default function StepConfiguration({
   const [localDescription, setLocalDescription] = useState(step.description || '')
   const [localTitle, setLocalTitle] = useState(step.title || '')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Local state for animation playback mode to provide immediate UI feedback
+  const [playbackMode, setPlaybackMode] = useState<string>(step.model_animation_loop ? 'loop' : 'once')
 
   // Sync when step changes (navigation)
   useEffect(() => {
     setLocalDescription(step.description || '')
     setLocalTitle(step.title || '')
+    // Keep playbackMode in sync when switching steps
+    setPlaybackMode(step.model_animation_loop ? 'loop' : 'once')
   }, [step.id, step.description, step.title])
 
   const debouncedUpdate = (patch: UpdateStepRequest) => {
@@ -213,6 +217,22 @@ export default function StepConfiguration({
                   placeholder="Animation clip name"
                 />
               )}
+            </div>
+
+            <div>
+              <label className={labelClass}>Animation Playback</label>
+              <select
+                className={selectClass}
+                value={playbackMode}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setPlaybackMode(val)
+                  onUpdate({ model_animation_loop: val === 'loop' })
+                }}
+              >
+                <option value="once">Once</option>
+                <option value="loop">Loop</option>
+              </select>
             </div>
 
             <div>

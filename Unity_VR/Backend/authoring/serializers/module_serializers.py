@@ -39,7 +39,7 @@ class StepSerializer(serializers.ModelSerializer):
             # Media
             "media_type", "media_asset",
             # Model
-            "model_asset", "model_animation",
+            "model_asset", "model_animation", "model_animation_loop",
             "model_position_x", "model_position_y", "model_position_z",
             "model_rotation_x", "model_rotation_y", "model_rotation_z",
             "model_scale",

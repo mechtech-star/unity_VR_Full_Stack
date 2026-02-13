@@ -130,6 +130,7 @@ class UnityModuleDetailSerializer(serializers.Serializer):
         return {
             "path": step.model_asset.file.url if step.model_asset.file else "",
             "animation": step.model_animation or "",
+            "animationLoop": step.model_animation_loop,
             "spawn": {
                 "position": [
                     step.model_position_x,

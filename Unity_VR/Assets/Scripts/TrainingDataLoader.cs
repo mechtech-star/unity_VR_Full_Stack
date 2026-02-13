@@ -59,6 +59,36 @@ public class TrainingDataLoader : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Ensures step.model.animationLoop is set correctly.
+    /// The Unity JSON has "animationLoop" inside the nested "model" object
+    /// (deserialized directly into StepModelData.animationLoop). The top-level
+    /// model_animation_loop only exists in the CMS API responses. Use OR so
+    /// we never overwrite a correct true value with the missing default of false.
+    /// </summary>
+    void MapModelLoopFlags()
+    {
+        if (ModuleData == null || ModuleData.tasks == null) return;
+
+        foreach (var task in ModuleData.tasks)
+        {
+            if (task?.steps == null) continue;
+            foreach (var step in task.steps)
+            {
+                if (step == null) continue;
+                if (step.model == null)
+                    step.model = new StepModelData();
+
+                // Use OR: model.animationLoop may already be true from nested JSON,
+                // model_animation_loop may be true from flat CMS JSON.
+                step.model.animationLoop = step.model.animationLoop || step.model_animation_loop;
+
+                Debug.Log($"[TrainingDataLoader] Step '{step.title}' (id={step.stepId}): " +
+                          $"model.animationLoop={step.model.animationLoop}, model_animation_loop={step.model_animation_loop}");
+            }
+        }
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────
 
     /// <summary>Returns true if a path is a server URL rather than a Resources path.</summary>
@@ -117,6 +147,19 @@ public class TrainingDataLoader : MonoBehaviour
                 yield break;
             }
 
+            // Map any top-level model_animation_loop flags into nested StepModelData.animationLoop
+            MapModelLoopFlags();
+            Debug.Log("[TrainingDataLoader] After mapping model loop flags — sample step flags:");
+            // Log first few steps for verification
+            for (int t=0; t < Mathf.Min(ModuleData.tasks.Count, 3); t++){
+                var task = ModuleData.tasks[t];
+                if (task?.steps == null) continue;
+                for (int s=0; s < Mathf.Min(task.steps.Count, 3); s++){
+                    var step = task.steps[s];
+                    Debug.Log($"  Task {t} Step {s} id={step.stepId} model_animation_loop={step.model_animation_loop} model.animationLoop={step.model?.animationLoop}");
+                }
+            }
+
             Debug.Log($"[TrainingDataLoader] Loaded module from API: {ModuleData.title} ({ModuleData.tasks.Count} tasks)");
 
             // Pre-download all referenced assets before signalling ready
@@ -147,6 +190,21 @@ public class TrainingDataLoader : MonoBehaviour
         {
             Debug.LogError("[TrainingDataLoader] Failed to parse training JSON.");
             return null;
+        }
+
+        // Map any top-level model_animation_loop flags into nested StepModelData.animationLoop
+        MapModelLoopFlags();
+        Debug.Log("[TrainingDataLoader] After mapping model loop flags (local load):");
+        if (ModuleData.tasks != null)
+        {
+            for (int t=0; t < Mathf.Min(ModuleData.tasks.Count, 3); t++){
+                var task = ModuleData.tasks[t];
+                if (task?.steps == null) continue;
+                for (int s=0; s < Mathf.Min(task.steps.Count, 3); s++){
+                    var step = task.steps[s];
+                    Debug.Log($"  (local) Task {t} Step {s} id={step.stepId} model_animation_loop={step.model_animation_loop} model.animationLoop={step.model?.animationLoop}");
+                }
+            }
         }
 
         Debug.Log($"[TrainingDataLoader] Loaded module (local): {ModuleData.title} ({ModuleData.tasks.Count} tasks)");
@@ -389,7 +447,11 @@ public class TrainingDataLoader : MonoBehaviour
         var template = new GameObject($"GLB_{path.GetHashCode():X8}");
         template.transform.SetParent(TemplateRoot, false);
 
-        bool instantiated = gltf.InstantiateMainScene(template.transform);
+        var instantiateTask = gltf.InstantiateMainSceneAsync(template.transform);
+        while (!instantiateTask.IsCompleted)
+            yield return null;
+
+        bool instantiated = instantiateTask.Result;
         if (!instantiated)
         {
             Debug.LogError($"[TrainingDataLoader] GLB instantiation failed: {url}");
@@ -405,8 +467,27 @@ public class TrainingDataLoader : MonoBehaviour
         var clips = gltf.GetAnimationClips();
         if (clips != null && clips.Length > 0)
         {
+            // Convert clips from legacy to non-legacy at cache time so the
+            // Playables API can use them without per-step conversion.
+            foreach (var clip in clips)
+            {
+                if (clip != null && clip.legacy)
+                {
+                    clip.legacy = false;
+                    Debug.Log($"[TrainingDataLoader] Converted clip '{clip.name}' from legacy to non-legacy.");
+                }
+            }
             animClipCache[path] = clips;
             Debug.Log($"[TrainingDataLoader] Cached {clips.Length} animation clip(s) for: {path}");
+        }
+
+        // Remove the legacy Animation component that glTFast adds to the
+        // template.  This prevents "must be marked as Legacy" errors when
+        // the template is later cloned with Instantiate().
+        foreach (var legacyAnim in template.GetComponentsInChildren<Animation>(true))
+        {
+            Debug.Log($"[TrainingDataLoader] Removing legacy Animation component from '{legacyAnim.gameObject.name}'.");
+            Destroy(legacyAnim);
         }
 
         Debug.Log($"[TrainingDataLoader] GLB cached: {path} ({template.transform.childCount} root children)");

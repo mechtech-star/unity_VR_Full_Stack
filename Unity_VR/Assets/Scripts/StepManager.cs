@@ -80,7 +80,7 @@ public class StepManager : MonoBehaviour
         // in the scene so existing handlers continue to work.
         if (homeButton == null)
         {
-            var docs = FindObjectsOfType<UIDocument>();
+            var docs = Object.FindObjectsByType<UIDocument>(FindObjectsSortMode.None);
             foreach (var doc in docs)
             {
                 if (doc == null) continue;
@@ -228,6 +228,8 @@ public class StepManager : MonoBehaviour
                 SpawnData spawn   = step.model.spawn;
                 AnimationClip[] clips = dataLoader.ResolveAnimationClips(step.model.path);
 
+                Debug.Log($"[StepManager] Showing step {step.stepId} model with animationLoop={step.model.animationLoop}");
+
                 stepVisualController.ShowStepVisual(
                     prefab,
                     step.model.animation,
@@ -235,7 +237,8 @@ public class StepManager : MonoBehaviour
                     spawn != null ? spawn.Rotation : Quaternion.identity,
                     spawn != null ? spawn.Scale    : 1f,
                     step.model.path,
-                    clips
+                    clips,
+                    step.model.animationLoop
                 );
             }
             else

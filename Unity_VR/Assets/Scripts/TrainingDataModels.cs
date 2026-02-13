@@ -40,6 +40,8 @@ public class TrainingStepData
 
     public StepMediaData       media;
     public StepModelData       model;
+    // Captures backend top-level model animation loop flag (model_animation_loop)
+    public bool               model_animation_loop;
     public StepInteractionData interactions;
     public CompletionCriteria  completionCriteria;
 
@@ -69,6 +71,7 @@ public class StepModelData
 {
     public string    path;        // Resources-relative path to prefab
     public string    animation;   // animation clip / state name
+    public bool      animationLoop; // whether to loop the animation
     public SpawnData spawn;
 }
 

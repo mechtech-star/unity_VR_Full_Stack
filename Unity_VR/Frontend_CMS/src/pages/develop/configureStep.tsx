@@ -57,12 +57,20 @@ export default function ConfigureStep() {
                 // Collect all steps across all tasks for goToStep references
                 const every: Step[] = []
                 const currentTaskSteps: Step[] = []
-                
+
+                // Normalize steps: ensure `model_animation_loop` is present
                 for (const task of (module.tasks || [])) {
-                    for (const s of (task.steps || [])) {
-                        every.push(s)
+                    for (const raw of (task.steps || [])) {
+                        const s = raw as any
+                        const normalized: Step = {
+                            ...s,
+                            model_animation_loop: (s.model_animation_loop !== undefined)
+                                ? s.model_animation_loop
+                                : (s.model?.loop !== undefined ? s.model.loop : false),
+                        }
+                        every.push(normalized)
                         if (task.id === taskId) {
-                            currentTaskSteps.push(s)
+                            currentTaskSteps.push(normalized)
                         }
                     }
                 }
@@ -124,14 +132,15 @@ export default function ConfigureStep() {
     async function handleUpdate(patch: UpdateStepRequest) {
         if (!step) return
         setIsSaving(true)
-        try {
-            const updated = await apiClient.updateStep(step.id, patch) as Step | null
-            if (updated) {
-                setStep(updated)
-            } else {
-                // Optimistic local update
-                setStep(prev => prev ? { ...prev, ...patch } as Step : prev)
-            }
+            try {
+                const updated = await apiClient.updateStep(step.id, patch) as Step | null
+                if (updated) {
+                    // Merge server response with our patch to preserve fields
+                    setStep(prev => prev ? ({ ...updated, ...patch } as Step) : ({ ...updated, ...patch } as Step))
+                } else {
+                    // Optimistic local update
+                    setStep(prev => prev ? ({ ...prev, ...patch } as Step) : prev)
+                }
         } catch (err) {
             console.error('Failed to save step:', err)
             setError(`Failed to save step: ${err instanceof Error ? err.message : 'Unknown error'}`)

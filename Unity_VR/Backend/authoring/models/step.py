@@ -60,6 +60,8 @@ class Step(models.Model):
         related_name="model_for_steps"
     )
     model_animation = models.CharField(max_length=100, blank=True, default="")
+    # Whether the model animation should loop when played
+    model_animation_loop = models.BooleanField(default=False)
     model_position_x = models.FloatField(default=0.0)
     model_position_y = models.FloatField(default=0.0)
     model_position_z = models.FloatField(default=2.0)
