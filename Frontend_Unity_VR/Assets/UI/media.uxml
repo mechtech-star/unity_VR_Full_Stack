@@ -1,7 +1,0 @@
-<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
-    <Style src="project://database/Assets/UI/main.uss?fileID=7433441132597879392&amp;guid=18eedffac9039a949ae64e9af150388a&amp;type=3#main"/>
-    <ui:VisualElement name="VisualElement" class="media-root" style="position: absolute; left: auto; right: 0;">
-        <ui:Image name="mediaImage" class="media-image"/>
-        <ui:VisualElement name="videoContainer" class="video-container hidden"/>
-    </ui:VisualElement>
-</ui:UXML>

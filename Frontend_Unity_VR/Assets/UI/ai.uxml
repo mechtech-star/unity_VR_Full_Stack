@@ -1,8 +1,0 @@
-<ui:UXML xmlns:ui="UnityEngine.UIElements"
-         editor-extension-mode="False">
-    <Style src="project://database/Assets/UI/main.uss"/>
-    <!-- Root -->
-    <ui:VisualElement class="root hidden">
-
-    </ui:VisualElement>
-</ui:UXML>
