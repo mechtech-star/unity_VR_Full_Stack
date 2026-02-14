@@ -15,6 +15,7 @@ interface TaskCardProps {
   selectedStepIndex: number | null
   onSelectStep: (stepIndex: number) => void
   onRemoveStep: (stepIndex: number) => void
+  onDuplicateStep: (stepIndex: number) => void
   isSaving?: boolean
   assets?: any[]
   multiSelectMode?: boolean
@@ -33,6 +34,7 @@ export default function TaskCard({
   selectedStepIndex,
   onSelectStep,
   onRemoveStep,
+  onDuplicateStep,
   isSaving = false,
   assets = [],
   multiSelectMode = false,
@@ -119,6 +121,7 @@ export default function TaskCard({
                   selected={selectedStepIndex === stepIdx}
                   onSelect={onSelectStep}
                   onRemove={onRemoveStep}
+                  onDuplicate={onDuplicateStep}
                   isSaving={isSaving}
                   assets={assets}
                   multiSelectMode={multiSelectMode}

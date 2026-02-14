@@ -145,6 +145,7 @@ export default function AssetSidebar({
 
   const [fetchedAssets, setFetchedAssets] = useState<Array<{ id: string; name?: string; originalFilename?: string; metadata?: Record<string, unknown>; type?: string; url?: string }>>([])
 
+  // Fetch assets once on mount if the parent didn't provide any
   useEffect(() => {
     if (!assets || assets.length === 0) {
       apiClient.getAssets().then((result) => {
@@ -153,13 +154,17 @@ export default function AssetSidebar({
         console.error('Failed to fetch assets:', err)
       })
     }
-  }, [assets])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const effectiveAssets = assets && assets.length > 0 ? assets : fetchedAssets
 
   const [conflict, setConflict] = useState<{ existing: Model; file: File } | null>(null)
   const [conflictOpen, setConflictOpen] = useState(false)
   const [renameValue, setRenameValue] = useState('')
+
+  const [selectedAsset, setSelectedAsset] = useState<Model | null>(null)
+  const [detailsOpen, setDetailsOpen] = useState(false)
 
   const onTriggerUpload = useCallback(() => {
     inputRef.current?.click()
@@ -213,12 +218,12 @@ export default function AssetSidebar({
           setConflictOpen(true)
           break
         }
-        
+
         // Determine asset type
         let assetType: 'gltf' | 'image' | 'video' = 'gltf'
         if (imageFiles.includes(file)) assetType = 'image'
         else if (videoFiles.includes(file)) assetType = 'video'
-        
+
         const toId = toast.loading(`Uploading ${file.name}...`)
         try {
           let metadata = null
@@ -354,11 +359,10 @@ export default function AssetSidebar({
           <button
             type="button"
             onClick={() => onDetailTabChange?.(null)}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
-              !showDetails
+            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${!showDetails
                 ? 'text-foreground bg-card border-b-2 border-primary'
                 : 'text-muted-foreground hover:text-foreground bg-muted/30'
-            }`}
+              }`}
           >
             <FolderOpen className="w-3.5 h-3.5" />
             Assets
@@ -366,11 +370,10 @@ export default function AssetSidebar({
           <button
             type="button"
             onClick={() => onDetailTabChange?.(activeDetailTab || 'media')}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
-              showDetails
+            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${showDetails
                 ? 'text-foreground bg-card border-b-2 border-primary'
                 : 'text-muted-foreground hover:text-foreground bg-muted/30'
-            }`}
+              }`}
           >
             <Settings2 className="w-3.5 h-3.5" />
             Step Details
@@ -393,27 +396,139 @@ export default function AssetSidebar({
           />
         </div>
       ) : (
-      /* ── Assets View (original) ── */
-      <div className="flex-1 overflow-y-auto hide-scrollbar">
-        <div className="text-card-foreground rounded-lg p-2">
-          <div className="flex flex-col p-3 pb-6 pt-4 border-b sticky top-0 bg-card/80 backdrop-blur-md z-10">
-            <header>
-              <h2 className="font-semibold text-foreground text-lg">Asset Manager</h2>
-            </header>
+        /* ── Assets View (original) ── */
+        <>
+          <div className="flex-1 overflow-y-auto hide-scrollbar">
+            <div className="text-card-foreground rounded-lg p-2">
+              <div className="flex flex-col p-3 pb-6 pt-4 border-b sticky top-0 bg-card/80 backdrop-blur-md z-10">
+                <header>
+                  <h2 className="font-semibold text-foreground text-lg">Asset Manager</h2>
+                </header>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                <div className="flex items-center gap-2">
+                  <InputGroup className="flex-1">
+                    <InputGroupAddon>
+                      <Search className="w-4 h-4" />
+                    </InputGroupAddon>
+                    <InputGroupInput value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search models..." />
+                  </InputGroup>
+                </div>
+
+                <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                  {models
+                    .filter((m) => {
+                      const displayName = (m.name ?? m.originalFilename ?? '').toString()
+                      return displayName.toLowerCase().includes(searchTerm.toLowerCase())
+                    })
+                    .map((m) => {
+                      const displayName = m.name ?? m.originalFilename ?? 'Unnamed'
+                      const asset = effectiveAssets.find(a => a.id === m.id)
+                      const assetUrl = asset?.url ? `${BACKEND_BASE_URL}${asset.url}` : null
+
+                      const handleDragStart = (e: React.DragEvent) => {
+                        e.dataTransfer.setData('application/json', JSON.stringify({
+                          assetId: m.id,
+                          assetType: asset?.type,
+                          assetName: displayName
+                        }))
+                        e.dataTransfer.effectAllowed = 'copy'
+                      }
+
+                      return (
+                        <ContextMenu key={m.id}>
+                          <ContextMenuTrigger asChild>
+                            {showAssign ? (
+                              <button
+                                type="button"
+                                draggable
+                                onDragStart={handleDragStart}
+                                onClick={() => onAssignModel && onAssignModel(m.id)}
+                                className="flex flex-col items-center justify-center gap-2 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors p-2 w-full aspect-square cursor-pointer text-center relative overflow-hidden"
+                              >
+                                {asset?.type === 'gltf' && assetUrl ? (
+                                  <ModelSnapshotCard url={assetUrl} />
+                                ) : asset?.type === 'image' && assetUrl ? (
+                                  <img
+                                    src={assetUrl}
+                                    alt="asset thumbnail"
+                                    className="w-full h-full object-cover rounded"
+                                  />
+                                ) : asset?.type === 'video' && assetUrl ? (
+                                  <video
+                                    src={assetUrl}
+                                    className="w-full h-full object-cover rounded"
+                                    muted
+                                    preload="metadata"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                    <UploadCloud className="w-8 h-8" />
+                                  </div>
+                                )}
+                                <div className="absolute bottom-1 left-1 right-1 bg-black/50 text-white text-xs rounded px-1 truncate">
+                                  {displayName}
+                                </div>
+                              </button>
+                            ) : (
+                              <div
+                                draggable
+                                onDragStart={handleDragStart}
+                                className="flex flex-col items-center justify-center gap-2 rounded-lg border border-border bg-card p-2 w-full aspect-square text-center relative overflow-hidden cursor-grab active:cursor-grabbing"
+                              >
+                                {asset?.type === 'gltf' && assetUrl ? (
+                                  <ModelSnapshotCard url={assetUrl} />
+                                ) : asset?.type === 'image' && assetUrl ? (
+                                  <img
+                                    src={assetUrl}
+                                    alt="asset thumbnail"
+                                    className="w-full h-full object-cover rounded"
+                                  />
+                                ) : asset?.type === 'video' && assetUrl ? (
+                                  <video
+                                    src={assetUrl}
+                                    className="w-full h-full object-cover rounded"
+                                    muted
+                                    preload="metadata"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                    <UploadCloud className="w-8 h-8" />
+                                  </div>
+                                )}
+                                <div className="absolute bottom-1 left-1 right-1 bg-black/50 text-white text-xs rounded px-1 truncate">
+                                  {displayName}
+                                </div>
+                              </div>
+                            )}
+                          </ContextMenuTrigger>
+                          <ContextMenuContent>
+                            <ContextMenuItem
+                              onSelect={() => { setSelectedAsset(m); setDetailsOpen(true) }}
+                            >
+                              <Settings2 className="w-4 h-4 mr-2" />
+                              Details
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              variant="destructive"
+                              onSelect={() => onDelete && onDelete(m.id)}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Remove
+                            </ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
+                      )
+                    })}
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="mt-4 space-y-4">
-            <div className="flex items-center gap-2">
-              <InputGroup className="flex-1">
-                <InputGroupAddon>
-                  <Search className="w-4 h-4" />
-                </InputGroupAddon>
-                <InputGroupInput value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search models..." />
-              </InputGroup>
-            </div>
-
+          <div className="shrink-0 p-2">
             <div
-              className={`mb-3 w-full aspect-[2/1] flex flex-col items-center justify-center p-4 rounded-md overflow-hidden transition-all cursor-pointer border-2 border-dashed ${isDragging ? 'border-accent/80 bg-accent/10 shadow-md' : 'border-border bg-gradient-to-b from-transparent to-accent/3 hover:shadow-sm'} `}
+              className={`w-full aspect-[2/1] flex flex-col items-center justify-center p-4 rounded-md overflow-hidden transition-all cursor-pointer border-2 border-dashed shadow-lg shadow-[inset_0_2px_4px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.1)] bg-muted ${isDragging ? 'border-accent/80 bg-accent/20 shadow-xl' : 'border-border bg-gradient-to-b from-transparent to-accent/5 hover:shadow-xl hover:bg-accent/10'} `}
               onClick={(e) => { e.stopPropagation(); inputRef.current?.click() }}
               onDragOver={handleDragOver}
               onDragEnter={handleDragOver}
@@ -438,112 +553,10 @@ export default function AssetSidebar({
             </div>
 
             {uploadError && (
-              <div className="mb-2 p-2 bg-red-100 text-red-700 rounded text-sm">{uploadError}</div>
+              <div className="mt-2 p-2 bg-red-100 text-red-700 rounded text-sm">{uploadError}</div>
             )}
-
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-              {models
-                .filter((m) => {
-                  const displayName = (m.name ?? m.originalFilename ?? '').toString()
-                  return displayName.toLowerCase().includes(searchTerm.toLowerCase())
-                })
-                .map((m) => {
-                  const displayName = m.name ?? m.originalFilename ?? 'Unnamed'
-                  const asset = effectiveAssets.find(a => a.id === m.id)
-                  const assetUrl = asset?.url ? `${BACKEND_BASE_URL}${asset.url}` : null
-
-                  const handleDragStart = (e: React.DragEvent) => {
-                    e.dataTransfer.setData('application/json', JSON.stringify({
-                      assetId: m.id,
-                      assetType: asset?.type,
-                      assetName: displayName
-                    }))
-                    e.dataTransfer.effectAllowed = 'copy'
-                  }
-
-                  return (
-                    <ContextMenu key={m.id}>
-                      <ContextMenuTrigger asChild>
-                        {showAssign ? (
-                          <button
-                            type="button"
-                            draggable
-                            onDragStart={handleDragStart}
-                            onClick={() => onAssignModel && onAssignModel(m.id)}
-                            className="flex flex-col items-center justify-center gap-2 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors p-2 w-full aspect-square cursor-pointer text-center relative overflow-hidden"
-                          >
-                            {asset?.type === 'gltf' && assetUrl ? (
-                              <ModelSnapshotCard url={assetUrl} />
-                            ) : asset?.type === 'image' && assetUrl ? (
-                              <img
-                                src={assetUrl}
-                                alt="asset thumbnail"
-                                className="w-full h-full object-cover rounded"
-                              />
-                            ) : asset?.type === 'video' && assetUrl ? (
-                              <video
-                                src={assetUrl}
-                                className="w-full h-full object-cover rounded"
-                                muted
-                                preload="metadata"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                                <UploadCloud className="w-8 h-8" />
-                              </div>
-                            )}
-                            <div className="absolute bottom-1 left-1 right-1 bg-black/50 text-white text-xs rounded px-1 truncate">
-                              {displayName}
-                            </div>
-                          </button>
-                        ) : (
-                          <div
-                            draggable
-                            onDragStart={handleDragStart}
-                            className="flex flex-col items-center justify-center gap-2 rounded-lg border border-border bg-card p-2 w-full aspect-square text-center relative overflow-hidden cursor-grab active:cursor-grabbing"
-                          >
-                            {asset?.type === 'gltf' && assetUrl ? (
-                              <ModelSnapshotCard url={assetUrl} />
-                            ) : asset?.type === 'image' && assetUrl ? (
-                              <img
-                                src={assetUrl}
-                                alt="asset thumbnail"
-                                className="w-full h-full object-cover rounded"
-                              />
-                            ) : asset?.type === 'video' && assetUrl ? (
-                              <video
-                                src={assetUrl}
-                                className="w-full h-full object-cover rounded"
-                                muted
-                                preload="metadata"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                                <UploadCloud className="w-8 h-8" />
-                              </div>
-                            )}
-                            <div className="absolute bottom-1 left-1 right-1 bg-black/50 text-white text-xs rounded px-1 truncate">
-                              {displayName}
-                            </div>
-                          </div>
-                        )}
-                      </ContextMenuTrigger>
-                      <ContextMenuContent>
-                        <ContextMenuItem
-                          variant="destructive"
-                          onSelect={() => onDelete && onDelete(m.id)}
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Remove
-                        </ContextMenuItem>
-                      </ContextMenuContent>
-                    </ContextMenu>
-                  )
-                })}
-            </div>
           </div>
-        </div>
-      </div>
+        </>
       )}
 
       <Dialog open={conflictOpen && !!conflict} onOpenChange={setConflictOpen}>
@@ -568,6 +581,73 @@ export default function AssetSidebar({
               <Button variant="secondary" onClick={() => { setConflictOpen(false); setConflict(null) }}>Cancel</Button>
               <Button variant="secondary" onClick={handleReplace}>Replace</Button>
               <Button onClick={handleRenameAndUpload}>Rename & Upload</Button>
+            </DialogFooter>
+
+            <DialogClose />
+          </DialogContent>
+        ) : null}
+      </Dialog>
+
+      <Dialog open={detailsOpen && !!selectedAsset} onOpenChange={setDetailsOpen}>
+        {selectedAsset ? (
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Asset Details</DialogTitle>
+              <DialogDescription>Detailed information about the selected asset.</DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Name</label>
+                <p className="text-sm text-foreground">{selectedAsset.name ?? selectedAsset.originalFilename ?? 'Unnamed'}</p>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Original Filename</label>
+                <p className="text-sm text-foreground">{selectedAsset.originalFilename ?? 'N/A'}</p>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Asset ID</label>
+                <p className="text-sm text-foreground font-mono">{selectedAsset.id}</p>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Uploaded Date</label>
+                <p className="text-sm text-foreground">{formatUploaded(selectedAsset.uploadedAt ?? selectedAsset.created_at)}</p>
+              </div>
+
+              {(() => {
+                const asset = effectiveAssets.find(a => a.id === selectedAsset.id)
+                return asset ? (
+                  <>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Type</label>
+                      <p className="text-sm text-foreground capitalize">{asset.type ?? 'Unknown'}</p>
+                    </div>
+
+                    {asset.url && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">URL</label>
+                        <p className="text-sm text-foreground break-all font-mono">{asset.url}</p>
+                      </div>
+                    )}
+
+                    {asset.metadata && Object.keys(asset.metadata).length > 0 && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Metadata</label>
+                        <pre className="text-xs text-foreground bg-muted p-2 rounded mt-1 overflow-auto max-h-32">
+                          {JSON.stringify(asset.metadata, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </>
+                ) : null
+              })()}
+            </div>
+
+            <DialogFooter>
+              <Button onClick={() => { setDetailsOpen(false); setSelectedAsset(null) }}>Close</Button>
             </DialogFooter>
 
             <DialogClose />

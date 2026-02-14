@@ -11,6 +11,11 @@ export async function deleteStepAndRefresh(stepId: string): Promise<void> {
   await apiClient.deleteStep(stepId)
 }
 
+/** Add a new step to a task. If insertAfterOrder is given, inserts after that position; otherwise appends at end. */
+export async function addStep(moduleId: string, taskId: string, title?: string, insertAfterOrder?: number): Promise<Step | null> {
+  return apiClient.createStep(moduleId, taskId, title, insertAfterOrder)
+}
+
 /** Update a step with the given patch data */
 export async function updateStep(stepId: string, patch: UpdateStepRequest): Promise<Step | null> {
   return apiClient.updateStep(stepId, patch)

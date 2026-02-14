@@ -6,6 +6,7 @@ from authoring.views.module_views import (
     ModuleDetailView,
     StepCreateView,
     StepUpdateDeleteView,
+    StepDuplicateView,
     StepReorderView,
     ModulePublishView,
 )
@@ -32,6 +33,7 @@ urlpatterns = [
     path("modules/<uuid:module_id>/steps/reorder", StepReorderView.as_view(), name="step-reorder"),
     path("modules/<uuid:module_id>/publish", ModulePublishView.as_view(), name="module-publish"),
     path("steps/<uuid:pk>", StepUpdateDeleteView.as_view(), name="step-detail"),
+    path("steps/<uuid:pk>/duplicate", StepDuplicateView.as_view(), name="step-duplicate"),
 
     # ── Asset Management ──────────────────────────────────────────────
     path("assets/upload", AssetUploadView.as_view(), name="asset-upload"),

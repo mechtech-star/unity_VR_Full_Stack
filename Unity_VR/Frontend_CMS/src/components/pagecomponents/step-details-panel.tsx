@@ -1,5 +1,5 @@
-import { X, Plus, Trash2, Maximize, Image as ImageIcon, Box, MousePointerClick, CheckCircle2, HelpCircle } from 'lucide-react'
-import { useEffect, useRef, Suspense, useMemo } from 'react'
+import { X, Plus, Trash2, Maximize, Image as ImageIcon, Box, MousePointerClick, CheckCircle2, HelpCircle, Play, Pause } from 'lucide-react'
+import { useEffect, useRef, Suspense, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, useGLTF, Bounds, useBounds, useAnimations, Environment, Center, ContactShadows } from '@react-three/drei'
@@ -16,22 +16,40 @@ const COMPLETION_TYPES = ['button_clicked', 'animation_completed', 'interaction_
 export type DetailTab = 'media' | 'model' | 'interaction' | 'completion' | 'choices'
 
 /* ── Preview scene rendered inside the model Canvas ── */
-function ModelScene({ url, animation, loop }: { url: string; animation?: string; loop?: boolean }) {
+function ModelScene({ url, animation, loop, isPlaying }: { url: string; animation?: string; loop?: boolean; isPlaying: boolean }) {
   const { scene, animations } = useGLTF(url)
   const cloned = useMemo(() => scene.clone(true), [scene])
   const group = useRef<InstanceType<typeof THREE.Group>>(null)
-  const { actions } = useAnimations(animations, group)
+  const { actions, names } = useAnimations(animations, group)
+  const currentActionRef = useRef<THREE.AnimationAction | null>(null)
+  const isPlayingRef = useRef(isPlaying)
+  isPlayingRef.current = isPlaying
 
+  // Setup effect: runs when animation clip, actions, or loop changes
   useEffect(() => {
     Object.values(actions).forEach(a => a?.stop())
-    if (animation && actions[animation]) {
-      const a = actions[animation]!
-      a.reset()
-      a.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1)
-      a.play()
-    }
-    return () => { Object.values(actions).forEach(a => a?.stop()) }
-  }, [animation, actions, loop])
+    currentActionRef.current = null
+
+    if (!animation || !names.includes(animation)) return
+
+    const action = actions[animation]
+    if (!action) return
+
+    currentActionRef.current = action
+    action.reset()
+    action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1)
+    action.paused = !isPlayingRef.current
+    action.play()
+
+    return () => { action.stop() }
+  }, [animation, actions, names, loop])
+
+  // Play/pause effect: toggles without resetting the animation
+  useEffect(() => {
+    const action = currentActionRef.current
+    if (!action) return
+    action.paused = !isPlaying
+  }, [isPlaying])
 
   return (
     <group ref={group}>
@@ -92,6 +110,17 @@ export default function StepDetailsPanel({
   }
 
   const activeModel = activeModelIndex >= 0 ? (step.models || [])[activeModelIndex] : null
+
+  const [isAnimationPlaying, setIsAnimationPlaying] = useState(true)
+
+  useEffect(() => {
+    if (activeModel?.asset && fitRef.current) {
+      // Small delay to ensure the scene is loaded
+      setTimeout(() => fitRef.current?.(), 100)
+    }
+    // Auto-play animation when switching models
+    setIsAnimationPlaying(!!activeModel?.animation)
+  }, [activeModelIndex, activeModel?.asset, activeModel?.animation])
 
   // Build visible tabs dynamically
   const showChoices = step.instruction_type === 'question'
@@ -177,11 +206,8 @@ export default function StepDetailsPanel({
                 ) : (
                   <img src={`${BACKEND_BASE_URL}${mediaAsset.url}`} alt="media preview" className="w-full rounded" />
                 )}
-                <div className="mt-2 flex items-center justify-between">
+                <div className="mt-2">
                   <span className="text-xs text-muted-foreground truncate">{mediaAsset.originalFilename || mediaAsset.name}</span>
-                  <Button size="sm" variant="ghost" onClick={() => onUpdate({ media_asset: null, media_type: null })}>
-                    <X className="w-3 h-3 mr-1" /> Remove
-                  </Button>
                 </div>
               </div>
             )}
@@ -193,9 +219,6 @@ export default function StepDetailsPanel({
               <>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-foreground">Model {activeModelIndex + 1}</span>
-                  <Button variant="destructive" size="sm" onClick={() => removeModel(activeModelIndex)}>
-                    <Trash2 className="w-3.5 h-3.5 mr-1" /> Remove
-                  </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">Configure this 3D model's asset, animation, and transform.</p>
 
@@ -232,14 +255,14 @@ export default function StepDetailsPanel({
                               <Maximize className="w-3.5 h-3.5 mr-1" /> Fit
                             </Button>
                           </div>
-                          <div className="w-full h-56 border border-border rounded-lg overflow-hidden bg-black/5">
+                          <div className="w-full h-80 border border-border rounded-lg overflow-hidden bg-[radial-gradient(circle_at_center,rgba(128,128,128,0.25)_0%,transparent_70%)]">
                             <Canvas camera={{ position: [0, 1, 5], fov: 45 }} shadows>
                               <Suspense fallback={null}>
                                 <Environment preset="studio" />
                                 <Bounds fit clip observe margin={1.5}>
                                   <BoundsController fitRef={fitRef} />
                                   <Center>
-                                    <ModelScene url={modelUrl} animation={activeModel.animation} loop={activeModel.animation_loop} />
+                                    <ModelScene key={`${modelUrl}-${activeModelIndex}`} url={modelUrl} animation={activeModel.animation} loop={activeModel.animation_loop} isPlaying={isAnimationPlaying} />
                                   </Center>
                                 </Bounds>
                                 <ContactShadows position={[0, -1, 0]} opacity={0.35} scale={10} blur={2} />
@@ -252,26 +275,44 @@ export default function StepDetailsPanel({
 
                       <div>
                         <label className={labelClass}>Animation</label>
-                        {modelAnimations.length > 0 ? (
-                          <Select
-                            value={activeModel.animation || ''}
-                            onValueChange={(value) => updateModel(activeModelIndex, { animation: value })}
-                          >
-                            <SelectItem value="">(none)</SelectItem>
-                            {modelAnimations.map((a: { name: string }, i: number) => (
-                              <SelectItem key={i} value={a.name}>
-                                {a.name || `clip-${i}`}
-                              </SelectItem>
-                            ))}
-                          </Select>
-                        ) : (
-                          <input
-                            className={inputClass}
-                            value={activeModel.animation || ''}
-                            onChange={(e) => updateModel(activeModelIndex, { animation: e.target.value })}
-                            placeholder="Animation clip name"
-                          />
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex-1">
+                            {modelAnimations.length > 0 ? (
+                              <Select
+                                value={activeModel.animation || ''}
+                                onValueChange={(value) => { updateModel(activeModelIndex, { animation: value }); if (value) setIsAnimationPlaying(true) }}
+                              >
+                                <SelectItem value="">(none)</SelectItem>
+                                {modelAnimations.map((a: { name: string }, i: number) => (
+                                  <SelectItem key={i} value={a.name}>
+                                    {a.name || `clip-${i}`}
+                                  </SelectItem>
+                                ))}
+                              </Select>
+                            ) : (
+                              <input
+                                className={inputClass}
+                                value={activeModel.animation || ''}
+                                onChange={(e) => updateModel(activeModelIndex, { animation: e.target.value })}
+                                placeholder="Animation clip name"
+                              />
+                            )}
+                          </div>
+                          {activeModel.animation && (
+                            <Button
+                              variant="outline" size="icon-sm"
+                              className="shrink-0"
+                              onClick={() => setIsAnimationPlaying(!isAnimationPlaying)}
+                              title={isAnimationPlaying ? 'Pause' : 'Play'}
+                            >
+                              {isAnimationPlaying ? (
+                                <Pause className="w-3.5 h-3.5" />
+                              ) : (
+                                <Play className="w-3.5 h-3.5" />
+                              )}
+                            </Button>
+                          )}
+                        </div>
                       </div>
 
                       <div>

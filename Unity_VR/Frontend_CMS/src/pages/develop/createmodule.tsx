@@ -200,6 +200,23 @@ export default function CreateModule() {
         }
     }
 
+    async function duplicateStepInTask(taskId: string, stepIndex: number) {
+        const task = tasks.find(t => t.id === taskId)
+        const step = task?.steps?.[stepIndex]
+        if (!step) return
+
+        setIsSaving(true)
+        try {
+            await apiClient.duplicateStep(step.id)
+            await loadModule()
+        } catch (err) {
+            console.error('Failed to duplicate step:', err)
+            setError(`Failed to duplicate step: ${err instanceof Error ? err.message : 'Unknown error'}`)
+        } finally {
+            setIsSaving(false)
+        }
+    }
+
     async function handlePublish() {
         if (!moduleId) {
             alert('Module not initialized')
@@ -252,16 +269,16 @@ export default function CreateModule() {
     }
 
     return (
-        <main className="min-h-screen bg-background">
+        <main className="min-h-screen bg-background workspace-gradient">
             <div className="overflow-hidden h-screen">
                 <div className="grid grid-rows-[auto_1fr] grid-cols-1 lg:grid-cols-12 h-screen">
                     <Header title={`Module Workspace: ${decodedModuleName}`} onBack={() => navigate('/develop')} />
 
                     <div className="col-span-1 lg:col-span-9 pl-2 py-2 overflow-hidden">
-                        <div className="h-full rounded-lg border border-border bg-background flex flex-col overflow-hidden">
-                            <div className="px-4 pt-4 shrink-0">
+                        <div className="h-full rounded-xl glass-panel noise-overlay border-2 border-border flex flex-col overflow-hidden">
+                            <div className="relative z-10 px-4 py-4 shrink-0 border-b border-border">
                                 <div className="flex items-center justify-between">
-                                    <h3 className="text-lg font-semibold text-foreground">Configure Module - Task Based Structure</h3>
+                                    <h3 className="text-lg font-semibold text-foreground">Configure Module's Tasks</h3>
                                     <div className="flex gap-2">
                                         <Button 
                                             size="sm" 
@@ -304,7 +321,7 @@ export default function CreateModule() {
                                 )}
                             </div>
                             
-                            <div className="flex-1 overflow-y-auto px-4 py-4">
+                            <div className="relative z-10 flex-1 overflow-y-auto px-4 pt-8 grid-lines">
                                 {tasks.length === 0 ? (
                                     <div className="p-8 bg-muted/20 rounded-lg border border-dashed text-center">
                                         <h3 className="text-lg font-semibold text-foreground mb-2">No tasks yet</h3>
@@ -339,6 +356,7 @@ export default function CreateModule() {
                                                     }
                                                 }}
                                                 onRemoveStep={(stepIdx) => removeStepFromTask(task.id, stepIdx)}
+                                                onDuplicateStep={(stepIdx) => duplicateStepInTask(task.id, stepIdx)}
                                                 isSaving={isSaving}
                                                 assets={assets}
                                                 multiSelectMode={multiSelectMode}
@@ -364,6 +382,7 @@ export default function CreateModule() {
                         <div className="h-full">
                             <AssetSidebar
                                 models={assets}
+                                assets={assets}
                                 showAssign={false}
                             />
                         </div>

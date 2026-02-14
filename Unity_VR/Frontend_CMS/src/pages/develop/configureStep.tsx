@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Trash2 } from 'lucide-react'
+import { Trash2, Plus } from 'lucide-react'
 import { Button } from '../../components/ui/button'
 import AssetSidebar from '../../components/pagecomponents/asset-sidebar'
 import Header from '../../components/pagecomponents/header'
 import StepConfiguration from '../../components/pagecomponents/step-configuration'
 import { apiClient } from '../../lib/api'
-import { deleteStepAndRefresh } from '../../lib/stepOperations'
+import { deleteStepAndRefresh, addStep } from '../../lib/stepOperations'
 import type { Step, Module, Task, UpdateStepRequest } from '../../types'
 import type { DetailTab } from '../../components/pagecomponents/step-details-panel'
 
@@ -194,6 +194,26 @@ export default function ConfigureStep() {
         }
     }
 
+    async function handleAddStep() {
+        if (!step || !taskId || !moduleId) return
+        setIsSaving(true)
+        try {
+            // Insert new step right after the current step
+            // Backend handles shifting subsequent steps and auto-generating the title
+            const newStep = await addStep(moduleId, taskId, '', step.order_index)
+            if (newStep) {
+                const newStepIndex = taskSteps.findIndex(s => s.id === step.id) + 1
+                const params = `moduleId=${moduleId}&stepId=${newStep.id}&taskId=${taskId}&index=0&stepIndex=${newStepIndex}&moduleName=${encodeURIComponent(moduleName)}`
+                navigate(`/develop/configure-step?${params}`)
+            }
+        } catch (err) {
+            console.error('Failed to add step:', err)
+            setError(`Failed to add step: ${err instanceof Error ? err.message : 'Unknown error'}`)
+        } finally {
+            setIsSaving(false)
+        }
+    }
+
     function goBackToModule() {
         if (moduleId) {
             navigate(`/develop/createmodule/${encodeURIComponent(moduleName)}?id=${moduleId}`)
@@ -232,14 +252,18 @@ export default function ConfigureStep() {
 
                     <div className="col-span-1 lg:col-span-9 pl-2 py-2 overflow-hidden">
                         <div className="h-full rounded-xl glass-panel noise-overlay flex flex-col overflow-hidden">
-                            <div className="relative z-10 px-4 py-4 shrink-0 border-b border-white/10">
+                            <div className="relative z-10 px-4 py-4 shrink-0 border-b border-border">
                                 <div className="flex items-center justify-between">
                                     <h3 className="text-lg font-semibold text-foreground">
-                                        Configure Step{currentTask ? ` ${currentTask.order_index}.${step.order_index}` : ''}
+                                        Step{currentTask ? ` ${currentTask.order_index}.${step.order_index}` : ''}
                                     </h3>
                                     <div className="flex gap-2 items-center">
                                         <Button size="icon-sm" variant="destructive" onClick={handleDeleteStep} disabled={isSaving}>
                                             <Trash2 />
+                                        </Button>
+                                        <Button size="sm" variant="outline" onClick={handleAddStep} disabled={isSaving}>
+                                            <Plus className="w-4 h-4 mr-2" />
+                                            Add Step
                                         </Button>
                                         <Button size="sm" variant="secondary" onClick={() => goToNeighbor(-1)} disabled={!canGoPrev}>
                                             Previous Step
@@ -256,7 +280,7 @@ export default function ConfigureStep() {
                                 )}
                             </div>
                             <div className="relative z-10 flex-1 overflow-y-auto px-4 pt-8 grid-lines">
-                                <div className="w-full max-w-none lg:max-w-4xl mx-auto glass-panel noise-overlay rounded-xl p-6 mb-8">
+                                <div className="w-full max-w-none lg:max-w-4xl mx-auto glass-panel noise-overlay border-2 border-border rounded-xl p-6 mb-8">
                                     <StepConfiguration
                                         step={step}
                                         onUpdate={handleUpdate}

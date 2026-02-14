@@ -1,6 +1,11 @@
-import { Trash2, MoreHorizontal, Box, Image, Video } from 'lucide-react'
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../ui/dropdown-menu'
-import { Button } from '../ui/button'
+import { Trash2, Copy, Box, Image, Video } from 'lucide-react'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '../ui/context-menu'
 import type { Step } from '../../types'
 
 const INSTRUCTION_COLORS: Record<string, string> = {
@@ -20,6 +25,7 @@ interface StepCardProps {
   selected?: boolean
   onSelect?: (index: number) => void
   onRemove?: (index: number) => void
+  onDuplicate?: (index: number) => void
   isSaving?: boolean
   assets?: Array<{ id: string; name?: string; originalFilename?: string; metadata?: any }>
   multiSelectMode?: boolean
@@ -28,13 +34,14 @@ interface StepCardProps {
 }
 
 export default function StepCard(props: StepCardProps) {
-  const { step, index, indexOffset = 0, selected = false, onSelect, onRemove, isSaving = false, assets = [], multiSelectMode = false, isMultiSelected = false, onToggleSelect } = props
+  const { step, index, indexOffset = 0, selected = false, onSelect, onRemove, onDuplicate, isSaving = false, assets = [], multiSelectMode = false, isMultiSelected = false, onToggleSelect } = props
   
   const displayIndex = indexOffset > 0 
     ? `${indexOffset}.${step.order_index}` 
     : `${step.order_index}`
 
   const handleClick = (e: any) => {
+    if (e.button === 2) return // Prevent right-click from triggering selection
     const target = e.target as HTMLElement | null
     if (target && target.closest('input, textarea, button, select, a')) return
     if (e.nativeEvent?.composedPath?.()?.some((el: any) => el.getAttribute?.('role') === 'menuitem' || el.getAttribute?.('role') === 'menu')) return
@@ -48,76 +55,78 @@ export default function StepCard(props: StepCardProps) {
   const badgeClass = INSTRUCTION_COLORS[step.instruction_type] || 'bg-muted text-muted-foreground'
 
   return (
-    <div className="relative">
-      <div
-        className={`bg-card h-64 text-card-foreground rounded-lg p-4 border border-border hover:shadow-md transition-shadow cursor-pointer ${selected ? 'shadow-sm' : ''}`}
-        onClick={handleClick}
-      >
-        {multiSelectMode && (
-          <input
-            type="checkbox"
-            checked={isMultiSelected}
-            onChange={(e) => { e.stopPropagation(); onToggleSelect && onToggleSelect(index) }}
-            className="absolute left-3 top-3 w-4 h-4"
-          />
-        )}
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div className="relative">
+          <div
+            className={`bg-card h-64 text-card-foreground rounded-lg p-4 border border-border hover:shadow-md transition-shadow cursor-pointer ${selected ? 'shadow-sm' : ''}`}
+            onClick={handleClick}
+          >
+            {multiSelectMode && (
+              <input
+                type="checkbox"
+                checked={isMultiSelected}
+                onChange={(e) => { e.stopPropagation(); onToggleSelect && onToggleSelect(index) }}
+                className="absolute left-3 top-3 w-4 h-4"
+              />
+            )}
 
-        <div className="flex flex-col gap-2 h-full">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 truncate flex-1">
-              <span className="text-xs font-bold text-muted-foreground shrink-0">{displayIndex}</span>
-              <span className="text-sm font-semibold text-foreground truncate">
-                {(step.title && step.title.trim()) ? step.title.trim() : `Step ${displayIndex}`}
-              </span>
+            <div className="flex flex-col gap-2 h-full">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 truncate flex-1">
+                  <span className="text-xs font-bold text-muted-foreground shrink-0">{displayIndex}</span>
+                  <span className="text-sm font-semibold text-foreground truncate">
+                    {(step.title && step.title.trim()) ? step.title.trim() : `Step ${displayIndex}`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Instruction type badge */}
+              <div>
+                <span className={`inline-block text-[10px] font-medium px-2 py-0.5 rounded-full ${badgeClass}`}>
+                  {step.instruction_type}
+                </span>
+              </div>
+
+              <div className="text-xs text-muted-foreground line-clamp-4 whitespace-pre-wrap break-words flex-1">
+                {step.description || 'No description yet.'}
+              </div>
+
+              {/* Bottom indicators */}
+              <div className="flex items-center gap-2 mt-auto">
+                {step.models && step.models.length > 0 && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted rounded px-2 py-1">
+                    <Box className="w-3 h-3" />
+                    <span>{step.models.length === 1 ? '1 3D Model' : `${step.models.length} 3D Models`}</span>
+                  </div>
+                )}
+                {step.media_asset && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted rounded px-2 py-1">
+                    {step.media_type === 'video' ? <Video className="w-3 h-3" /> : <Image className="w-3 h-3" />}
+                    <span>{step.media_asset_filename || step.media_type || 'Media'}</span>
+                  </div>
+                )}
+                {step.choices && step.choices.length > 0 && (
+                  <div className="text-xs text-muted-foreground bg-muted rounded px-2 py-1">
+                    {step.choices.length} choice{step.choices.length !== 1 ? 's' : ''}
+                  </div>
+                )}
+              </div>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button onClick={(e) => e.stopPropagation()} variant="ghost" size="icon-sm" title="More">
-                  <MoreHorizontal className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent sideOffset={6} align="end">
-                <DropdownMenuItem onSelect={() => onRemove && onRemove(index)} variant="destructive">
-                  <Trash2 className="w-4 h-4 text-destructive" />
-                  <span className="text-destructive">Delete</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
-          {/* Instruction type badge */}
-          <div>
-            <span className={`inline-block text-[10px] font-medium px-2 py-0.5 rounded-full ${badgeClass}`}>
-              {step.instruction_type}
-            </span>
-          </div>
-
-          <div className="text-xs text-muted-foreground line-clamp-4 whitespace-pre-wrap break-words flex-1">
-            {step.description || 'No description yet.'}
-          </div>
-
-          {/* Bottom indicators */}
-          <div className="flex items-center gap-2 mt-auto">
-            {step.models && step.models.length > 0 && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted rounded px-2 py-1">
-                <Box className="w-3 h-3" />
-                <span>{step.models.length === 1 ? '1 3D Model' : `${step.models.length} 3D Models`}</span>
-              </div>
-            )}
-            {step.media_asset && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted rounded px-2 py-1">
-                {step.media_type === 'video' ? <Video className="w-3 h-3" /> : <Image className="w-3 h-3" />}
-                <span>{step.media_asset_filename || step.media_type || 'Media'}</span>
-              </div>
-            )}
-            {step.choices && step.choices.length > 0 && (
-              <div className="text-xs text-muted-foreground bg-muted rounded px-2 py-1">
-                {step.choices.length} choice{step.choices.length !== 1 ? 's' : ''}
-              </div>
-            )}
           </div>
         </div>
-      </div>
-    </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={() => onDuplicate && onDuplicate(index)}>
+          <Copy className="w-4 h-4" />
+          Duplicate
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => onRemove && onRemove(index)} variant="destructive">
+          <Trash2 className="w-4 h-4 text-destructive" />
+          <span className="text-destructive">Delete</span>
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

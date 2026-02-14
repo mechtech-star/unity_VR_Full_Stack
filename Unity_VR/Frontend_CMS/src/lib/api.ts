@@ -143,16 +143,19 @@ class ApiClient {
   }
 
   // ── Step API ─────────────────────────────────────────────────────
-  async createStep(moduleId: string, taskId: string, title?: string, orderIndex?: number): Promise<Step | null> {
+  async createStep(moduleId: string, taskId: string, title?: string, insertAfterOrder?: number): Promise<Step | null> {
+    const body: Record<string, unknown> = {
+      task: taskId,
+      title: title || '',
+      description: '',
+      instruction_type: 'info',
+    }
+    if (insertAfterOrder !== undefined) {
+      body.insert_after_order = insertAfterOrder
+    }
     return this.request<Step>(`/modules/${moduleId}/steps`, {
       method: 'POST',
-      body: JSON.stringify({
-        task: taskId,
-        title: title || '',
-        description: '',
-        instruction_type: 'info',
-        order_index: orderIndex ?? 0,
-      }),
+      body: JSON.stringify(body),
     })
   }
 
@@ -166,6 +169,12 @@ class ApiClient {
   async deleteStep(stepId: string): Promise<null> {
     return this.request(`/steps/${stepId}`, {
       method: 'DELETE',
+    })
+  }
+
+  async duplicateStep(stepId: string): Promise<Step | null> {
+    return this.request<Step>(`/steps/${stepId}/duplicate`, {
+      method: 'POST',
     })
   }
 
