@@ -11,7 +11,7 @@ using System.Collections.Generic;
 public class StepVisualController : MonoBehaviour
 {
     [Header("Spawn Settings")]
-    [Tooltip("Fallback parent when JSON spawn position is (0,0,0)")]
+    [Tooltip("The origin point for all 3D models. AnchorPlacementManager moves this Transform to the user's chosen position.")]
     public Transform spawnPoint;
 
     // ── Per-model tracking ───────────────────────────────────────────
@@ -47,11 +47,13 @@ public class StepVisualController : MonoBehaviour
             return;
         }
 
-        // Use spawnPoint as origin offset if provided; otherwise use world origin
+        // spawnPoint is the single origin for all models.
+        // AnchorPlacementManager moves it to the user's chosen position.
         Vector3 basePos       = spawnPoint != null ? spawnPoint.position : Vector3.zero;
         Quaternion baseRot    = spawnPoint != null ? spawnPoint.rotation : Quaternion.identity;
 
-        Vector3 finalPos      = basePos + position;
+        // Model position/rotation are relative to spawnPoint
+        Vector3 finalPos      = basePos + baseRot * position;
         Quaternion finalRot   = baseRot * rotation;
 
         var instance = Instantiate(glbPrefab, finalPos, finalRot);

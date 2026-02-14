@@ -30,5 +30,26 @@
                        class="nav-button"
                        text="Close" />
         </ui:VisualElement>
+
+        <!-- Anchor Placement Overlay -->
+        <ui:VisualElement name="anchorOverlay" class="anchor-overlay hidden">
+            <ui:VisualElement class="anchor-card">
+                <ui:Label text="📍 Set Model Origin" class="anchor-title" />
+                <ui:Label name="anchorInstructions"
+                          class="anchor-instructions"
+                          text="Grab and move the blue cube to where you want your 3D models to appear. This point becomes the origin (0,0,0) for all models." />
+                <ui:Label name="anchorPositionLabel"
+                          class="anchor-position-label"
+                          text="Position: (0.00, 0.00, 0.00)" />
+                <ui:VisualElement class="anchor-button-row">
+                    <ui:Button name="anchorResetButton"
+                               class="nav-button anchor-reset-button"
+                               text="Reset" />
+                    <ui:Button name="anchorConfirmButton"
+                               class="nav-button primary anchor-confirm-button"
+                               text="Confirm Placement" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

@@ -34,13 +34,17 @@ public class AppFlowManager : MonoBehaviour
     public HomePageController homePageController;
     public StepManager        stepManager;
     public TrainingDataLoader dataLoader;
+    public AnchorPlacementManager anchorPlacementManager;
 
     [Tooltip("Camera follow controller — forced ON when on the home page")]
     public CameraFollowController followController;
 
     // ── State ────────────────────────────────────────────────────────
-    enum AppState { Home, Training }
+    enum AppState { Home, AnchorPlacement, Training }
     AppState currentState = AppState.Home;
+
+    // Stashed module title for logging after anchor phase
+    string pendingModuleTitle;
 
     // ──────────────────────────────────────────────────────────────────
     void Awake()
@@ -59,6 +63,10 @@ public class AppFlowManager : MonoBehaviour
         // Subscribe to StepManager "return home" event
         if (stepManager != null)
             stepManager.OnReturnHome += OnReturnHome;
+
+        // Subscribe to anchor placement confirmation
+        if (anchorPlacementManager != null)
+            anchorPlacementManager.OnAnchorConfirmed += OnAnchorConfirmed;
     }
 
     void Start()
@@ -73,6 +81,9 @@ public class AppFlowManager : MonoBehaviour
 
         if (stepManager != null)
             stepManager.OnReturnHome -= OnReturnHome;
+
+        if (anchorPlacementManager != null)
+            anchorPlacementManager.OnAnchorConfirmed -= OnAnchorConfirmed;
     }
 
     // ── View transitions ──────────────────────────────────────────────
@@ -86,6 +97,10 @@ public class AppFlowManager : MonoBehaviour
         if (mediaPanelView != null) mediaPanelView.SetActive(false);
         if (topPanelView != null)   topPanelView.SetActive(false);
         if (homeView != null)       homeView.SetActive(true);
+
+        // Clean up anchor placement if it was in progress
+        if (anchorPlacementManager != null)
+            anchorPlacementManager.Cleanup();
 
         // Disable the spatial panel manipulator's visuals & grab so it
         // can't be grabbed/moved on the home page (children stay active).
@@ -153,9 +168,34 @@ public class AppFlowManager : MonoBehaviour
         // Wait one frame so all UIDocument components finish rebuilding
         yield return null;
 
-        stepManager.ReloadModule();
+        // Instead of going straight to steps, enter anchor placement phase
+        pendingModuleTitle = title;
 
-        Debug.Log($"[AppFlowManager] → Training: {title}");
+        if (anchorPlacementManager != null)
+        {
+            currentState = AppState.AnchorPlacement;
+            anchorPlacementManager.uiDocument = stepManager.uiDocument;
+            anchorPlacementManager.BeginPlacement();
+            Debug.Log($"[AppFlowManager] → Anchor placement phase for: {title}");
+        }
+        else
+        {
+            // No anchor manager — go straight to training (backward compat)
+            stepManager.ReloadModule();
+            Debug.Log($"[AppFlowManager] → Training (no anchor): {title}");
+        }
+    }
+
+    /// <summary>
+    /// Called when the user confirms anchor placement.
+    /// The spawnPoint transform was already moved by AnchorPlacementManager,
+    /// so we just start training.
+    /// </summary>
+    void OnAnchorConfirmed()
+    {
+        currentState = AppState.Training;
+        stepManager.ReloadModule();
+        Debug.Log($"[AppFlowManager] → Training (anchored): {pendingModuleTitle}");
     }
 
     // ── Event handlers ───────────────────────────────────────────────
@@ -206,4 +246,5 @@ public class AppFlowManager : MonoBehaviour
     // ── Public API ───────────────────────────────────────────────────
     public bool IsHome()     => currentState == AppState.Home;
     public bool IsTraining() => currentState == AppState.Training;
+    public bool IsPlacingAnchor() => currentState == AppState.AnchorPlacement;
 }

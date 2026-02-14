@@ -531,3 +531,71 @@
 .action-container {
     flex-grow: 1;
 }
+
+/* ============================================
+   Anchor Placement Overlay
+   ============================================ */
+.anchor-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.85);
+    align-items: center;
+    justify-content: center;
+    padding: 48px;
+}
+
+.anchor-card {
+    background-color: rgb(24, 24, 27);          /* zinc-900 */
+    border-radius: 24px;
+    border-width: 1px;
+    border-color: rgba(96, 165, 250, 0.3);      /* blue-400 hint */
+    padding: 48px 40px;
+    max-width: 900px;
+    align-items: center;
+}
+
+.anchor-title {
+    font-size: 42px;
+    -unity-font-style: bold;
+    color: rgb(250, 250, 250);                  /* zinc-50 */
+    margin-bottom: 20px;
+    letter-spacing: -0.5px;
+    -unity-text-align: middle-center;
+}
+
+.anchor-instructions {
+    font-size: 28px;
+    color: rgb(161, 161, 170);                  /* zinc-400 */
+    -unity-text-align: middle-center;
+    white-space: normal;
+    margin-bottom: 24px;
+    max-width: 800px;
+    line-height: 140%;
+}
+
+.anchor-position-label {
+    font-size: 24px;
+    color: rgb(96, 165, 250);                   /* blue-400 */
+    -unity-font-style: italic;
+    margin-bottom: 36px;
+    -unity-text-align: middle-center;
+    letter-spacing: 0.5px;
+}
+
+.anchor-button-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.anchor-reset-button {
+    margin-right: 16px;
+    min-width: 180px;
+}
+
+.anchor-confirm-button {
+    min-width: 320px;
+}
