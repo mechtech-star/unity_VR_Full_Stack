@@ -1,5 +1,5 @@
 import { Button } from '../ui/button'
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { Trash2, MoreHorizontal, UploadCloud, Search, FolderOpen, Settings2 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -8,11 +8,17 @@ import {
   DropdownMenuItem,
 } from '../ui/dropdown-menu'
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '../ui/context-menu'
+import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
 } from '../ui/input-group'
-import { apiClient } from '../../lib/api'
+import { apiClient, BACKEND_BASE_URL } from '../../lib/api'
 import {
   Dialog,
   DialogContent,
@@ -29,6 +35,69 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 
 import StepDetailsPanel, { type DetailTab } from './step-details-panel'
 import type { Step as StepType, UpdateStepRequest } from '../../types'
+
+/* ── Offscreen snapshot hook — renders GLTF to a static data-URL image ── */
+function useModelSnapshot(url: string | null) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!url) { setDataUrl(null); return }
+
+    let disposed = false
+    const w = 240, h = 240
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+    renderer.setSize(w, h)
+    renderer.setPixelRatio(2)
+    renderer.setClearColor(0x000000, 0)
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+
+    const scene = new THREE.Scene()
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000)
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8))
+    const dir = new THREE.DirectionalLight(0xffffff, 1.2)
+    dir.position.set(5, 10, 7)
+    scene.add(dir)
+    const fill = new THREE.DirectionalLight(0xffffff, 0.4)
+    fill.position.set(-5, 0, -5)
+    scene.add(fill)
+
+    const loader = new (GLTFLoader as unknown as new () => { load: (url: string, onLoad: (gltf: { scene: InstanceType<typeof THREE.Object3D> }) => void, onProgress?: undefined, onError?: () => void) => void })()
+    loader.load(
+      url,
+      (gltf) => {
+        if (disposed) return
+        scene.add(gltf.scene)
+        const box = new THREE.Box3().setFromObject(gltf.scene)
+        const center = box.getCenter(new THREE.Vector3())
+        const size = box.getSize(new THREE.Vector3())
+        const maxDim = Math.max(size.x, size.y, size.z)
+        const dist = (maxDim / (2 * Math.tan((45 * Math.PI / 180) / 2))) * 1.6
+        camera.position.set(center.x + dist * 0.4, center.y + dist * 0.25, center.z + dist)
+        camera.lookAt(center)
+        camera.updateProjectionMatrix()
+        renderer.render(scene, camera)
+        setDataUrl(renderer.domElement.toDataURL())
+        renderer.dispose()
+        renderer.forceContextLoss()
+      },
+      undefined,
+      () => { if (!disposed) setDataUrl(null); renderer.dispose(); renderer.forceContextLoss() },
+    )
+
+    return () => { disposed = true; renderer.dispose(); renderer.forceContextLoss() }
+  }, [url])
+
+  return dataUrl
+}
+
+/* ── Small wrapper so card thumbnails are plain React (no live Canvas) ── */
+function ModelSnapshotCard({ url }: { url: string }) {
+  const snap = useModelSnapshot(url)
+  if (!snap) return <div className="flex items-center justify-center w-full h-full text-xs text-muted-foreground">Loading…</div>
+  return <img src={snap} alt="3D model" className="w-full h-full object-contain" />
+}
 
 type Model = {
   id: string
@@ -73,6 +142,20 @@ export default function AssetSidebar({
   const [searchTerm, setSearchTerm] = useState('')
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+
+  const [fetchedAssets, setFetchedAssets] = useState<Array<{ id: string; name?: string; originalFilename?: string; metadata?: Record<string, unknown>; type?: string; url?: string }>>([])
+
+  useEffect(() => {
+    if (!assets || assets.length === 0) {
+      apiClient.getAssets().then((result) => {
+        if (result) setFetchedAssets(result)
+      }).catch((err) => {
+        console.error('Failed to fetch assets:', err)
+      })
+    }
+  }, [assets])
+
+  const effectiveAssets = assets && assets.length > 0 ? assets : fetchedAssets
 
   const [conflict, setConflict] = useState<{ existing: Model; file: File } | null>(null)
   const [conflictOpen, setConflictOpen] = useState(false)
@@ -301,7 +384,7 @@ export default function AssetSidebar({
           <StepDetailsPanel
             step={step!}
             onUpdate={onStepUpdate!}
-            assets={assets}
+            assets={effectiveAssets}
             allSteps={allSteps}
             activeTab={activeDetailTab!}
             activeModelIndex={activeModelIndex}
@@ -358,7 +441,7 @@ export default function AssetSidebar({
               <div className="mb-2 p-2 bg-red-100 text-red-700 rounded text-sm">{uploadError}</div>
             )}
 
-            <div className="space-y-2">
+            <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
               {models
                 .filter((m) => {
                   const displayName = (m.name ?? m.originalFilename ?? '').toString()
@@ -366,35 +449,95 @@ export default function AssetSidebar({
                 })
                 .map((m) => {
                   const displayName = m.name ?? m.originalFilename ?? 'Unnamed'
-                  const uploaded = m.uploadedAt ?? m.created_at ?? undefined
+                  const asset = effectiveAssets.find(a => a.id === m.id)
+                  const assetUrl = asset?.url ? `${BACKEND_BASE_URL}${asset.url}` : null
+
+                  const handleDragStart = (e: React.DragEvent) => {
+                    e.dataTransfer.setData('application/json', JSON.stringify({
+                      assetId: m.id,
+                      assetType: asset?.type,
+                      assetName: displayName
+                    }))
+                    e.dataTransfer.effectAllowed = 'copy'
+                  }
+
                   return (
-                    <div key={m.id} className="flex items-center justify-between gap-2 p-2 rounded-md border border-border bg-transparent hover:bg-accent/5 dark:hover:bg-accent/10 transition-colors">
-                      <div>
-                        <div className="font-sans font-semibold text-sm text-foreground">{displayName}</div>
-                        <div className="text-sm text-muted-foreground">Uploaded: {formatUploaded(uploaded)}</div>
-                      </div>
-
-                      <div className="flex flex-col items-end gap-2">
+                    <ContextMenu key={m.id}>
+                      <ContextMenuTrigger asChild>
                         {showAssign ? (
-                          <Button size="sm" variant="secondary" onClick={() => onAssignModel && onAssignModel(m.id)}>Assign</Button>
+                          <button
+                            type="button"
+                            draggable
+                            onDragStart={handleDragStart}
+                            onClick={() => onAssignModel && onAssignModel(m.id)}
+                            className="flex flex-col items-center justify-center gap-2 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors p-2 w-full aspect-square cursor-pointer text-center relative overflow-hidden"
+                          >
+                            {asset?.type === 'gltf' && assetUrl ? (
+                              <ModelSnapshotCard url={assetUrl} />
+                            ) : asset?.type === 'image' && assetUrl ? (
+                              <img
+                                src={assetUrl}
+                                alt="asset thumbnail"
+                                className="w-full h-full object-cover rounded"
+                              />
+                            ) : asset?.type === 'video' && assetUrl ? (
+                              <video
+                                src={assetUrl}
+                                className="w-full h-full object-cover rounded"
+                                muted
+                                preload="metadata"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                <UploadCloud className="w-8 h-8" />
+                              </div>
+                            )}
+                            <div className="absolute bottom-1 left-1 right-1 bg-black/50 text-white text-xs rounded px-1 truncate">
+                              {displayName}
+                            </div>
+                          </button>
                         ) : (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button onClick={(e) => e.stopPropagation()} variant="ghost" size="icon-sm" title="More">
-                                <MoreHorizontal className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-
-                            <DropdownMenuContent sideOffset={6} align="end">
-                              <DropdownMenuItem onSelect={() => onDelete && onDelete(m.id)} variant="destructive">
-                                <Trash2 className="mr-2 w-4 h-4 text-destructive" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <div
+                            draggable
+                            onDragStart={handleDragStart}
+                            className="flex flex-col items-center justify-center gap-2 rounded-lg border border-border bg-card p-2 w-full aspect-square text-center relative overflow-hidden cursor-grab active:cursor-grabbing"
+                          >
+                            {asset?.type === 'gltf' && assetUrl ? (
+                              <ModelSnapshotCard url={assetUrl} />
+                            ) : asset?.type === 'image' && assetUrl ? (
+                              <img
+                                src={assetUrl}
+                                alt="asset thumbnail"
+                                className="w-full h-full object-cover rounded"
+                              />
+                            ) : asset?.type === 'video' && assetUrl ? (
+                              <video
+                                src={assetUrl}
+                                className="w-full h-full object-cover rounded"
+                                muted
+                                preload="metadata"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                <UploadCloud className="w-8 h-8" />
+                              </div>
+                            )}
+                            <div className="absolute bottom-1 left-1 right-1 bg-black/50 text-white text-xs rounded px-1 truncate">
+                              {displayName}
+                            </div>
+                          </div>
                         )}
-                      </div>
-                    </div>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent>
+                        <ContextMenuItem
+                          variant="destructive"
+                          onSelect={() => onDelete && onDelete(m.id)}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Remove
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
                   )
                 })}
             </div>
@@ -403,31 +546,33 @@ export default function AssetSidebar({
       </div>
       )}
 
-      <Dialog open={conflictOpen} onOpenChange={setConflictOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Asset name conflict</DialogTitle>
-            <DialogDescription>There is already an uploaded asset with the same filename. Replace it or rename the new upload.</DialogDescription>
-          </DialogHeader>
+      <Dialog open={conflictOpen && !!conflict} onOpenChange={setConflictOpen}>
+        {conflict ? (
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Asset name conflict</DialogTitle>
+              <DialogDescription>There is already an uploaded asset with the same filename. Replace it or rename the new upload.</DialogDescription>
+            </DialogHeader>
 
-          <div className="mt-2">
-            <div className="text-sm text-foreground">Existing: {conflict?.existing?.name ?? conflict?.existing?.originalFilename}</div>
-            <div className="text-sm text-muted-foreground">New file: {conflict?.file?.name}</div>
-          </div>
+            <div className="mt-2">
+              <div className="text-sm text-foreground">Existing: {conflict.existing?.name ?? conflict.existing?.originalFilename}</div>
+              <div className="text-sm text-muted-foreground">New file: {conflict.file?.name}</div>
+            </div>
 
-          <div className="mt-4">
-            <label className="text-sm text-muted-foreground">Rename new file</label>
-            <input className="mt-2 w-full rounded border border-border px-2 py-1 bg-input text-foreground" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
-          </div>
+            <div className="mt-4">
+              <label className="text-sm text-muted-foreground">Rename new file</label>
+              <input className="mt-2 w-full rounded border border-border px-2 py-1 bg-input text-foreground" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
+            </div>
 
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => { setConflictOpen(false); setConflict(null) }}>Cancel</Button>
-            <Button variant="secondary" onClick={handleReplace}>Replace</Button>
-            <Button onClick={handleRenameAndUpload}>Rename & Upload</Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button variant="secondary" onClick={() => { setConflictOpen(false); setConflict(null) }}>Cancel</Button>
+              <Button variant="secondary" onClick={handleReplace}>Replace</Button>
+              <Button onClick={handleRenameAndUpload}>Rename & Upload</Button>
+            </DialogFooter>
 
-          <DialogClose />
-        </DialogContent>
+            <DialogClose />
+          </DialogContent>
+        ) : null}
       </Dialog>
     </aside>
   )

@@ -172,3 +172,79 @@
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ── Glassmorphism & depth utilities ────────────────────── */
+
+/* SVG noise filter embedded as a data-URI so no extra files are needed */
+.noise-overlay {
+  position: relative;
+}
+.noise-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.12;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
+.dark .noise-overlay::before {
+  opacity: 0.12;
+}
+
+/* Glassmorphism panel */
+.glass-panel {
+  background: oklch(1 0 0 / 55%);
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  border: 1px solid oklch(1 0 0 / 18%);
+  box-shadow:
+    0 0 0 1px oklch(1 0 0 / 6%),
+    0 4px 24px -4px oklch(0 0 0 / 8%),
+    0 12px 48px -8px oklch(0 0 0 / 6%),
+    inset 0 1px 0 oklch(1 0 0 / 30%);
+}
+
+.dark .glass-panel {
+  background: oklch(0.18 0.005 270 / 45%);
+  border-color: oklch(1 0 0 / 8%);
+  box-shadow:
+    0 0 0 1px oklch(1 0 0 / 4%),
+    0 4px 24px -4px oklch(0 0 0 / 30%),
+    0 12px 48px -8px oklch(0 0 0 / 25%),
+    inset 0 1px 0 oklch(1 0 0 / 6%);
+}
+
+/* Animated mesh-gradient backdrop for the workspace area */
+.workspace-gradient {
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, oklch(0.75 0.12 250 / 12%), transparent 60%),
+    radial-gradient(ellipse 60% 80% at 80% 90%, oklch(0.72 0.14 310 / 10%), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 60% 30%, oklch(0.78 0.08 180 / 8%), transparent 55%),
+    var(--background);
+}
+
+.dark .workspace-gradient {
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, oklch(0.35 0.15 260 / 18%), transparent 60%),
+    radial-gradient(ellipse 60% 80% at 80% 90%, oklch(0.30 0.18 320 / 14%), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 60% 30%, oklch(0.32 0.10 190 / 10%), transparent 55%),
+    var(--background);
+}
+
+/* Fine grid lines for techy depth feel */
+.grid-lines {
+  background-image:
+    radial-gradient(circle, oklch(0.5 0 0 / 12%) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.dark .grid-lines {
+  background-image:
+    radial-gradient(circle, oklch(1 0 0 / 8%) 1px, transparent 1px);
+  background-size: 24px 24px;
+}

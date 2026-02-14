@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Trash2 } from 'lucide-react'
 import { Button } from '../../components/ui/button'
 import AssetSidebar from '../../components/pagecomponents/asset-sidebar'
 import Header from '../../components/pagecomponents/header'
@@ -34,15 +35,15 @@ export default function ConfigureStep() {
     // Load assets
     useEffect(() => {
         let mounted = true
-        ;(async () => {
-            try {
-                const list = (await apiClient.getAssets()) as any
-                if (!mounted) return
-                setAssets(list || [])
-            } catch (err) {
-                console.warn('Failed to load assets:', err)
-            }
-        })()
+            ; (async () => {
+                try {
+                    const list = (await apiClient.getAssets()) as any
+                    if (!mounted) return
+                    setAssets(list || [])
+                } catch (err) {
+                    console.warn('Failed to load assets:', err)
+                }
+            })()
         return () => { mounted = false }
     }, [])
 
@@ -52,63 +53,63 @@ export default function ConfigureStep() {
         setIsLoading(true)
         setActiveDetailTab(null)
         setActiveModelIndex(-1)
-        ;(async () => {
-            try {
-                const module = (await apiClient.getModule(moduleId)) as Module | null
-                if (!module) {
-                    setError('Module not found')
-                    return
-                }
+            ; (async () => {
+                try {
+                    const module = (await apiClient.getModule(moduleId)) as Module | null
+                    if (!module) {
+                        setError('Module not found')
+                        return
+                    }
 
-                setAllTasks(module.tasks || [])
-                setCurrentTask((module.tasks || []).find((t: Task) => t.id === taskId) || null)
+                    setAllTasks(module.tasks || [])
+                    setCurrentTask((module.tasks || []).find((t: Task) => t.id === taskId) || null)
 
-                // Collect all steps across all tasks for goToStep references
-                const every: Step[] = []
-                const currentTaskSteps: Step[] = []
+                    // Collect all steps across all tasks for goToStep references
+                    const every: Step[] = []
+                    const currentTaskSteps: Step[] = []
 
-                // Normalize steps: ensure models array is present and properly structured
-                for (const task of (module.tasks || [])) {
-                    for (const raw of (task.steps || [])) {
-                        const s = raw as any
-                        const normalized: Step = {
-                            ...s,
-                            models: s.models || (s.model_asset ? [{
-                                asset: s.model_asset,
-                                animation: s.model_animation || '',
-                                position_x: s.model_position_x || 0,
-                                position_y: s.model_position_y || 0,
-                                position_z: s.model_position_z || 0,
-                                rotation_x: s.model_rotation_x || 0,
-                                rotation_y: s.model_rotation_y || 0,
-                                rotation_z: s.model_rotation_z || 0,
-                                scale: s.model_scale || 1,
-                                animation_loop: s.model_animation_loop !== undefined ? s.model_animation_loop : false,
-                            }] : []),
-                        }
-                        every.push(normalized)
-                        if (task.id === taskId) {
-                            currentTaskSteps.push(normalized)
+                    // Normalize steps: ensure models array is present and properly structured
+                    for (const task of (module.tasks || [])) {
+                        for (const raw of (task.steps || [])) {
+                            const s = raw as any
+                            const normalized: Step = {
+                                ...s,
+                                models: s.models || (s.model_asset ? [{
+                                    asset: s.model_asset,
+                                    animation: s.model_animation || '',
+                                    position_x: s.model_position_x || 0,
+                                    position_y: s.model_position_y || 0,
+                                    position_z: s.model_position_z || 0,
+                                    rotation_x: s.model_rotation_x || 0,
+                                    rotation_y: s.model_rotation_y || 0,
+                                    rotation_z: s.model_rotation_z || 0,
+                                    scale: s.model_scale || 1,
+                                    animation_loop: s.model_animation_loop !== undefined ? s.model_animation_loop : false,
+                                }] : []),
+                            }
+                            every.push(normalized)
+                            if (task.id === taskId) {
+                                currentTaskSteps.push(normalized)
+                            }
                         }
                     }
-                }
-                
-                setAllSteps(every)
-                setTaskSteps(currentTaskSteps)
 
-                const found = every.find(s => s.id === stepId)
-                if (!found) {
-                    setError('Step not found')
-                    return
+                    setAllSteps(every)
+                    setTaskSteps(currentTaskSteps)
+
+                    const found = every.find(s => s.id === stepId)
+                    if (!found) {
+                        setError('Step not found')
+                        return
+                    }
+                    setStep(found)
+                } catch (err) {
+                    console.error('Failed to load step:', err)
+                    setError(`Failed to load step: ${err instanceof Error ? err.message : 'Unknown error'}`)
+                } finally {
+                    setIsLoading(false)
                 }
-                setStep(found)
-            } catch (err) {
-                console.error('Failed to load step:', err)
-                setError(`Failed to load step: ${err instanceof Error ? err.message : 'Unknown error'}`)
-            } finally {
-                setIsLoading(false)
-            }
-        })()
+            })()
     }, [moduleId, stepId])
 
     function goToNeighbor(delta: number) {
@@ -150,15 +151,15 @@ export default function ConfigureStep() {
     async function handleUpdate(patch: UpdateStepRequest) {
         if (!step) return
         setIsSaving(true)
-            try {
-                const updated = await apiClient.updateStep(step.id, patch) as Step | null
-                if (updated) {
-                    // Merge server response with our patch to preserve fields
-                    setStep(prev => prev ? ({ ...updated, ...patch } as Step) : ({ ...updated, ...patch } as Step))
-                } else {
-                    // Optimistic local update
-                    setStep(prev => prev ? ({ ...prev, ...patch } as Step) : prev)
-                }
+        try {
+            const updated = await apiClient.updateStep(step.id, patch) as Step | null
+            if (updated) {
+                // Merge server response with our patch to preserve fields
+                setStep(prev => prev ? ({ ...updated, ...patch } as Step) : ({ ...updated, ...patch } as Step))
+            } else {
+                // Optimistic local update
+                setStep(prev => prev ? ({ ...prev, ...patch } as Step) : prev)
+            }
         } catch (err) {
             console.error('Failed to save step:', err)
             setError(`Failed to save step: ${err instanceof Error ? err.message : 'Unknown error'}`)
@@ -224,19 +225,22 @@ export default function ConfigureStep() {
     })()
 
     return (
-        <main className="min-h-screen bg-background">
+        <main className="min-h-screen bg-background workspace-gradient">
             <div className="overflow-hidden h-screen">
                 <div className="grid grid-rows-[auto_1fr] grid-cols-1 lg:grid-cols-12 h-screen">
                     <Header title={`Step Workspace: ${moduleName}`} onBack={goBackToModule} />
 
                     <div className="col-span-1 lg:col-span-9 pl-2 py-2 overflow-hidden">
-                        <div className="h-full rounded-lg border border-border bg-background flex flex-col overflow-hidden">
-                            <div className="px-4 pt-4 shrink-0">
+                        <div className="h-full rounded-xl glass-panel noise-overlay flex flex-col overflow-hidden">
+                            <div className="relative z-10 px-4 py-4 shrink-0 border-b border-white/10">
                                 <div className="flex items-center justify-between">
                                     <h3 className="text-lg font-semibold text-foreground">
                                         Configure Step{currentTask ? ` ${currentTask.order_index}.${step.order_index}` : ''}
                                     </h3>
                                     <div className="flex gap-2 items-center">
+                                        <Button size="icon-sm" variant="destructive" onClick={handleDeleteStep} disabled={isSaving}>
+                                            <Trash2 />
+                                        </Button>
                                         <Button size="sm" variant="secondary" onClick={() => goToNeighbor(-1)} disabled={!canGoPrev}>
                                             Previous Step
                                         </Button>
@@ -251,12 +255,11 @@ export default function ConfigureStep() {
                                     </div>
                                 )}
                             </div>
-                            <div className="flex-1 overflow-y-auto px-4 py-4">
-                                <div className="max-w-2xl mx-auto">
+                            <div className="relative z-10 flex-1 overflow-y-auto px-4 pt-8 grid-lines">
+                                <div className="w-full max-w-none lg:max-w-4xl mx-auto glass-panel noise-overlay rounded-xl p-6 mb-8">
                                     <StepConfiguration
                                         step={step}
                                         onUpdate={handleUpdate}
-                                        onDelete={handleDeleteStep}
                                         isSaving={isSaving}
                                         assets={assets}
                                         onDetailSelect={handleDetailSelect}
@@ -266,7 +269,7 @@ export default function ConfigureStep() {
                         </div>
                     </div>
 
-                    <div className="col-span-1 lg:col-span-3 p-2 bg-background overflow-hidden">
+                    <div className="col-span-1 lg:col-span-3 p-2 overflow-hidden">
                         <div className="h-full">
                             <AssetSidebar
                                 models={assets}
