@@ -1,0 +1,35 @@
+<!--
+  link.xml — Prevents IL2CPP managed stripping from removing types
+  required at runtime on Quest / Android standalone builds.
+
+  Without this file, the aggressive stripping in Release builds can
+  remove animation, Playables, and glTFast types that are only
+  referenced via reflection or late-bound APIs.
+-->
+<linker>
+  <!-- Core Animation & Playables (used by StepVisualController) -->
+  <assembly fullname="UnityEngine.AnimationModule" preserve="all" />
+  <assembly fullname="UnityEngine.DirectorModule" preserve="all" />
+
+  <!-- glTFast runtime loading -->
+  <assembly fullname="glTFast" preserve="all" />
+
+  <!-- UnityEngine.CoreModule contains Transform, GameObject, etc. -->
+  <assembly fullname="UnityEngine.CoreModule">
+    <type fullname="UnityEngine.AnimationClip" preserve="all" />
+    <type fullname="UnityEngine.Animator" preserve="all" />
+    <type fullname="UnityEngine.Animation" preserve="all" />
+    <type fullname="UnityEngine.SkinnedMeshRenderer" preserve="all" />
+    <type fullname="UnityEngine.Transform" preserve="all" />
+  </assembly>
+
+  <!-- Networking (used by TrainingDataLoader & HomePageController) -->
+  <assembly fullname="UnityEngine.UnityWebRequestModule" preserve="all" />
+  <assembly fullname="UnityEngine.UnityWebRequestTextureModule" preserve="all" />
+
+  <!-- UI Toolkit -->
+  <assembly fullname="UnityEngine.UIElementsModule" preserve="all" />
+
+  <!-- Our scripts -->
+  <assembly fullname="Assembly-CSharp" preserve="all" />
+</linker>

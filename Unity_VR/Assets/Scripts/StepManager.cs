@@ -270,8 +270,12 @@ public class StepManager : MonoBehaviour
                 {
                     // Video playback: pass the full URL to the media panel
                     string videoUrl = step.media.path;
-                    if (videoUrl.StartsWith("/"))
-                        videoUrl = dataLoader.apiBaseUrl.TrimEnd('/') + videoUrl;
+                    if (videoUrl.StartsWith("/") || videoUrl.StartsWith("http"))
+                    {
+                        videoUrl = dataLoader != null
+                            ? dataLoader.ResolveFullUrl(videoUrl)
+                            : videoUrl;
+                    }
                     Debug.Log($"[StepManager] Video URL: {videoUrl}");
                     // TODO: implement mediaPanelController.ShowVideo(videoUrl)
                     mediaPanelController.Hide();

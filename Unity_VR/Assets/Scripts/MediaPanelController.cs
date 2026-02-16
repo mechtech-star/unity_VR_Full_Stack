@@ -5,7 +5,7 @@ public class MediaPanelController : MonoBehaviour
 {
     public UIDocument uiDocument;
 
-    Image mediaImage;
+    VisualElement mediaImage;   // Changed from Image to VisualElement — we use style.backgroundImage
     VisualElement videoContainer;
 
     void Awake()
@@ -35,7 +35,10 @@ public class MediaPanelController : MonoBehaviour
             return;
         }
 
-        mediaImage = root.Q<Image>("mediaImage");
+        // Query as VisualElement — works for both <Image> and <VisualElement> tags.
+        // We drive visibility via style.backgroundImage so the USS
+        // -unity-background-scale-mode: scale-to-fit takes effect.
+        mediaImage = root.Q("mediaImage");
         videoContainer = root.Q<VisualElement>("videoContainer");
 
         if (mediaImage == null)
@@ -68,9 +71,31 @@ public class MediaPanelController : MonoBehaviour
 
         mediaImage.RemoveFromClassList("hidden");
         mediaImage.style.display = DisplayStyle.Flex;
-        mediaImage.image = texture;
 
-        Debug.Log($"[MediaPanelController] Showing image: {texture.name} ({texture.width}x{texture.height})");
+        // Use style.backgroundImage so that the USS rule
+        // -unity-background-scale-mode: scale-to-fit applies correctly.
+        mediaImage.style.backgroundImage = new StyleBackground(texture);
+
+        // Also set the Image.image property if the element is an Image
+        // (belt-and-suspenders for older UXML where Image may rely on it).
+        if (mediaImage is Image img)
+            img.image = texture;
+
+        // Compute a concrete width from the texture aspect ratio so the
+        // element doesn't collapse to 0px when width is "auto".
+        // The parent has height: 100% on the media-root; we read it.
+        float aspectRatio = (float)texture.width / Mathf.Max(texture.height, 1);
+        mediaImage.RegisterCallbackOnce<GeometryChangedEvent>(evt =>
+        {
+            float h = evt.newRect.height;
+            if (h > 0f)
+            {
+                float w = Mathf.Min(h * aspectRatio, 1440f);
+                mediaImage.style.width = w;
+            }
+        });
+
+        Debug.Log($"[MediaPanelController] Showing image: {texture.name} ({texture.width}x{texture.height}, aspect={aspectRatio:F2})");
     }
 
     public void Hide()
@@ -85,5 +110,12 @@ public class MediaPanelController : MonoBehaviour
 
         mediaImage.AddToClassList("hidden");
         videoContainer.AddToClassList("hidden");
+
+        // Clear the background so texture can be GC'd
+        mediaImage.style.backgroundImage = StyleKeyword.None;
+        mediaImage.style.width = StyleKeyword.Auto;
+
+        if (mediaImage is Image img)
+            img.image = null;
     }
 }

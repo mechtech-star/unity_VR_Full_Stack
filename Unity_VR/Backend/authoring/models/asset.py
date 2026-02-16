@@ -1,8 +1,10 @@
+import io
 import os
 import uuid
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
+from django.core.files.base import ContentFile
 from django.db import models
 
 
@@ -103,3 +105,78 @@ def _delete_old_file_on_change(sender, instance: Asset, **kwargs):
             old_file.delete(save=False)
     except Exception:
         pass
+
+
+# ── Image format normalisation (WebP / GIF → PNG) ────────────────────
+from django.db.models.signals import post_save
+
+
+@receiver(post_save, sender=Asset)
+def _normalise_image_format(sender, instance: Asset, created, **kwargs):
+    """
+    After an image asset is created, convert non-Unity-friendly formats
+    (WebP, GIF) to PNG. Updates the file, mime_type, and original_filename
+    in-place. Only fires for newly created assets with type == 'image'.
+    """
+    if not created:
+        return
+
+    if instance.type != "image":
+        return
+
+    if not instance.file:
+        return
+
+    ext = os.path.splitext(instance.file.name)[1].lower()
+    if ext not in (".webp", ".gif"):
+        return
+
+    try:
+        from PIL import Image as PILImage
+
+        instance.file.open("rb")
+        img = PILImage.open(instance.file)
+        img = img.convert("RGBA")
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+
+        # Build the new storage path: replace extension with .png
+        old_path = instance.file.name
+        new_path = os.path.splitext(old_path)[0] + ".png"
+
+        # Delete old file from storage
+        instance.file.storage.delete(old_path)
+
+        # Save new PNG file
+        instance.file.save(new_path, ContentFile(buf.read()), save=False)
+        instance.mime_type = "image/png"
+
+        # Update original filename extension too
+        if instance.original_filename:
+            base = os.path.splitext(instance.original_filename)[0]
+            instance.original_filename = base + ".png"
+
+        # Use update() to avoid triggering signals again
+        Asset.objects.filter(pk=instance.pk).update(
+            file=instance.file.name,
+            mime_type=instance.mime_type,
+            original_filename=instance.original_filename,
+        )
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[Asset] Converted {ext} → PNG for asset {instance.pk}")
+
+    except ImportError:
+        import logging
+        logging.getLogger(__name__).warning(
+            "[Asset] Pillow not installed — cannot convert WebP/GIF to PNG. "
+            "Install with: pip install Pillow"
+        )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).error(
+            f"[Asset] Failed to convert {ext} to PNG for asset {instance.pk}: {exc}"
+        )

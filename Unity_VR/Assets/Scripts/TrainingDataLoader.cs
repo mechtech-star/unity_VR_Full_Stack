@@ -26,9 +26,11 @@ using GLTFast;
 public class TrainingDataLoader : MonoBehaviour
 {
     [Header("API Settings")]
-    [Tooltip("Base URL of the authoring backend (e.g. http://localhost:8000)")]
-    public string apiBaseUrl = "http://localhost:8000";
-
+    [Tooltip("Optional override for the backend base URL. If empty, the AppConfig (Assets/Resources/app_config.asset) value is used.")]
+    public string apiBaseUrl;
+    [Tooltip("Optional fallback override. If empty, AppConfig/apiBaseUrlFallback or a sensible default is used.")]
+    public string apiBaseUrlFallback;
+    
     [Header("Local Fallback")]
     [Tooltip("Optional: drag a local training JSON file here for offline use")]
     public TextAsset trainingJson;
@@ -41,6 +43,11 @@ public class TrainingDataLoader : MonoBehaviour
     Dictionary<string, Texture2D>       textureCache  = new Dictionary<string, Texture2D>();
     Dictionary<string, AnimationClip[]> animClipCache = new Dictionary<string, AnimationClip[]>();
     List<GltfImport> loadedGltfImports = new List<GltfImport>();
+
+    // The base URL that was successfully used to fetch the module JSON.
+    // All subsequent asset downloads (GLB, textures) use this URL so they
+    // reach the same server — critical for Quest where localhost != the PC.
+    string _workingBaseUrl;
 
     // Hidden root that keeps template objects deactivated
     Transform _templateRoot;
@@ -78,11 +85,21 @@ public class TrainingDataLoader : MonoBehaviour
             && (path.StartsWith("/") || path.StartsWith("http"));
     }
 
-    /// <summary>Prepends apiBaseUrl if the path is relative (starts with /).</summary>
-    string ResolveFullUrl(string path)
+    /// <summary>
+    /// Prepends the working base URL (the one that succeeded for the module fetch)
+    /// or falls back to AppConfig resolution if no working URL is set yet.
+    /// Public so callers like StepManager can resolve asset URLs via the same server.
+    /// </summary>
+    public string ResolveFullUrl(string path)
     {
         if (path.StartsWith("http")) return path;
-        return apiBaseUrl.TrimEnd('/') + path;
+
+        // Prefer the base URL that actually responded during module fetch
+        if (!string.IsNullOrEmpty(_workingBaseUrl))
+            return _workingBaseUrl.TrimEnd('/') + path;
+
+        string baseUrl = ApiConfigProvider.GetApiBaseUrl(apiBaseUrl);
+        return baseUrl.TrimEnd('/') + path;
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -101,21 +118,45 @@ public class TrainingDataLoader : MonoBehaviour
 
     IEnumerator FetchModuleCoroutine(string jsonPath, Action<TrainingModuleData> onComplete)
     {
-        string url = apiBaseUrl.TrimEnd('/') + jsonPath;
-        Debug.Log($"[TrainingDataLoader] Fetching module from: {url}");
 
-        using (var request = UnityWebRequest.Get(url))
+        string primary = ApiConfigProvider.GetApiBaseUrl(apiBaseUrl);
+        string fallback = ApiConfigProvider.GetApiBaseUrlFallback(apiBaseUrlFallback);
+
+        string[] bases = new string[] { primary };
+        if (!string.IsNullOrEmpty(fallback) && fallback != primary)
+            bases = new string[] { primary, fallback };
+
+        string json = null;
+        foreach (var baseUrl in bases)
         {
-            yield return request.SendWebRequest();
+            string url = baseUrl.TrimEnd('/') + jsonPath;
+            Debug.Log($"[TrainingDataLoader] Fetching module from: {url}");
 
-            if (request.result != UnityWebRequest.Result.Success)
+            using (var request = UnityWebRequest.Get(url))
             {
-                Debug.LogError($"[TrainingDataLoader] API request failed: {request.error} (URL: {url})");
-                onComplete?.Invoke(null);
-                yield break;
-            }
+                yield return request.SendWebRequest();
 
-            string json = request.downloadHandler.text;
+                if (request.result == UnityWebRequest.Result.Success)
+                {
+                    json = request.downloadHandler.text;
+                    _workingBaseUrl = baseUrl;   // remember which server responded
+                    Debug.Log($"[TrainingDataLoader] Working base URL set to: {baseUrl}");
+                    break;
+                }
+                else
+                {
+                    Debug.LogWarning($"[TrainingDataLoader] API request failed for {baseUrl}: {request.error}");
+                }
+            }
+        }
+
+        if (string.IsNullOrEmpty(json))
+        {
+            Debug.LogError($"[TrainingDataLoader] All API endpoints failed for path: {jsonPath}");
+            onComplete?.Invoke(null);
+            yield break;
+        }
+
             Debug.Log($"[TrainingDataLoader] Raw API JSON (first 500 chars): {json.Substring(0, Mathf.Min(json.Length, 500))}");
 
             ModuleData = JsonUtility.FromJson<TrainingModuleData>(json);
@@ -147,7 +188,6 @@ public class TrainingDataLoader : MonoBehaviour
             yield return PreloadAssetsCoroutine();
 
             onComplete?.Invoke(ModuleData);
-        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -304,6 +344,7 @@ public class TrainingDataLoader : MonoBehaviour
     {
         ClearAssetCaches();
         ModuleData = null;
+        _workingBaseUrl = null;
         Debug.Log("[TrainingDataLoader] All caches cleared.");
     }
 
@@ -397,7 +438,42 @@ public class TrainingDataLoader : MonoBehaviour
         string url = ResolveFullUrl(path);
         Debug.Log($"[TrainingDataLoader] Downloading texture: {url}");
 
-        using (var request = UnityWebRequestTexture.GetTexture(url))
+        // Determine if this is a format Unity can natively decode via
+        // UnityWebRequestTexture (PNG, JPG, TGA, EXR).  WebP and GIF
+        // are NOT supported natively — fall back to raw-byte download
+        // + Texture2D.LoadImage() which handles PNG/JPG and, on newer
+        // Unity versions (2023.1+), WebP as well.
+        bool useNativeDecoder = !url.EndsWith(".webp", System.StringComparison.OrdinalIgnoreCase)
+                             && !url.EndsWith(".gif",  System.StringComparison.OrdinalIgnoreCase);
+
+        if (useNativeDecoder)
+        {
+            using (var request = UnityWebRequestTexture.GetTexture(url))
+            {
+                yield return request.SendWebRequest();
+
+                if (request.result == UnityWebRequest.Result.Success)
+                {
+                    var tex = DownloadHandlerTexture.GetContent(request);
+                    if (tex != null)
+                    {
+                        textureCache[path] = tex;
+                        Debug.Log($"[TrainingDataLoader] Texture cached (native): {path} ({tex.width}x{tex.height})");
+                        yield break;
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"[TrainingDataLoader] Native texture download failed: {request.error} ({url}). Trying raw-byte fallback.");
+                }
+            }
+        }
+
+        // Raw-byte fallback — downloads the file as bytes and tries
+        // Texture2D.LoadImage() which handles PNG, JPG, and WebP on
+        // Unity 2023.1+.  For older Unity on Android/Quest, the
+        // backend should convert WebP to PNG (see asset upload pipeline).
+        using (var request = UnityWebRequest.Get(url))
         {
             yield return request.SendWebRequest();
 
@@ -407,11 +483,24 @@ public class TrainingDataLoader : MonoBehaviour
                 yield break;
             }
 
-            var tex = DownloadHandlerTexture.GetContent(request);
-            if (tex != null)
+            byte[] data = request.downloadHandler.data;
+            if (data == null || data.Length == 0)
+            {
+                Debug.LogError($"[TrainingDataLoader] Texture download empty: {url}");
+                yield break;
+            }
+
+            var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            if (tex.LoadImage(data))
             {
                 textureCache[path] = tex;
-                Debug.Log($"[TrainingDataLoader] Texture cached: {path}");
+                Debug.Log($"[TrainingDataLoader] Texture cached (raw bytes): {path} ({tex.width}x{tex.height})");
+            }
+            else
+            {
+                Debug.LogError($"[TrainingDataLoader] Failed to decode texture from raw bytes: {url}. " +
+                               "If the image is WebP, ensure the backend converts it to PNG/JPG on upload.");
+                Destroy(tex);
             }
         }
     }
@@ -457,31 +546,55 @@ public class TrainingDataLoader : MonoBehaviour
         prefabCache[path] = template;
         loadedGltfImports.Add(gltf);
 
-        // Cache animation clips from the glTF import
+        // Cache animation clips from the glTF import.
+        // IMPORTANT: Keep clips as Legacy.  glTFast creates Legacy
+        // AnimationClips and a Legacy Animation component.  Converting
+        // clip.legacy = false breaks curve bindings on Quest IL2CPP.
+        // StepVisualController uses the Legacy Animation system directly.
         var clips = gltf.GetAnimationClips();
         if (clips != null && clips.Length > 0)
         {
-            // Convert clips from legacy to non-legacy at cache time so the
-            // Playables API can use them without per-step conversion.
             foreach (var clip in clips)
             {
-                if (clip != null && clip.legacy)
+                if (clip != null)
                 {
-                    clip.legacy = false;
-                    Debug.Log($"[TrainingDataLoader] Converted clip '{clip.name}' from legacy to non-legacy.");
+                    // Ensure legacy flag is set (glTFast should already do this)
+                    if (!clip.legacy)
+                    {
+                        clip.legacy = true;
+                        Debug.Log($"[TrainingDataLoader] Clip '{clip.name}' was non-legacy — set to legacy.");
+                    }
+                    Debug.Log($"[TrainingDataLoader] Clip '{clip.name}': legacy={clip.legacy}, length={clip.length}s");
                 }
             }
             animClipCache[path] = clips;
             Debug.Log($"[TrainingDataLoader] Cached {clips.Length} animation clip(s) for: {path}");
         }
 
-        // Remove the legacy Animation component that glTFast adds to the
-        // template.  This prevents "must be marked as Legacy" errors when
-        // the template is later cloned with Instantiate().
+        // Keep the Legacy Animation component that glTFast created.
+        // Add all clips to it so StepVisualController can Play() by name
+        // after instantiation.  Remove any Animator component that would
+        // conflict with the Legacy system.
         foreach (var legacyAnim in template.GetComponentsInChildren<Animation>(true))
         {
-            Debug.Log($"[TrainingDataLoader] Removing legacy Animation component from '{legacyAnim.gameObject.name}'.");
-            Destroy(legacyAnim);
+            Debug.Log($"[TrainingDataLoader] Keeping Legacy Animation on '{legacyAnim.gameObject.name}'.");
+
+            // Register every clip by name so Play(clipName) works after Instantiate
+            if (clips != null)
+            {
+                foreach (var clip in clips)
+                {
+                    if (clip != null)
+                        legacyAnim.AddClip(clip, clip.name);
+                }
+            }
+        }
+
+        // Remove any Animator components — they conflict with Legacy Animation
+        foreach (var animator in template.GetComponentsInChildren<Animator>(true))
+        {
+            Debug.Log($"[TrainingDataLoader] Removing Animator from '{animator.gameObject.name}' — using Legacy Animation.");
+            DestroyImmediate(animator);
         }
 
         Debug.Log($"[TrainingDataLoader] GLB cached: {path} ({template.transform.childCount} root children)");

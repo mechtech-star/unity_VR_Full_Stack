@@ -1,12 +1,18 @@
 using UnityEngine;
-using UnityEngine.Playables;
-using UnityEngine.Animations;
 using System.Collections.Generic;
 
 /// <summary>
 /// Spawns and manages 3D models for each training step.
 /// Supports multiple simultaneous models per step, each with
 /// independent transforms and animations.
+///
+/// Animation strategy:
+///   glTFast imports GLB animations as **Legacy** AnimationClips and adds
+///   a Legacy `Animation` component.  We use that directly — converting
+///   to Mecanim/Playables is fragile on Quest IL2CPP because curve
+///   bindings created by glTFast don't survive the legacy→non-legacy
+///   conversion at runtime.  The Legacy Animation system works reliably
+///   on every platform for runtime-loaded content.
 /// </summary>
 public class StepVisualController : MonoBehaviour
 {
@@ -18,11 +24,7 @@ public class StepVisualController : MonoBehaviour
     struct ModelInstance
     {
         public GameObject gameObject;
-        public PlayableGraph graph;
-        public bool graphInitialized;
-        public AnimationClipPlayable clipPlayable;
-        public float clipLength;
-        public bool isLooping;
+        public Animation  animation;   // Legacy Animation component
     }
 
     List<ModelInstance> activeModels = new List<ModelInstance>();
@@ -48,27 +50,20 @@ public class StepVisualController : MonoBehaviour
         }
 
         // spawnPoint is the single origin for all models.
-        // AnchorPlacementManager moves it to the user's chosen position.
-        Vector3 basePos       = spawnPoint != null ? spawnPoint.position : Vector3.zero;
-        Quaternion baseRot    = spawnPoint != null ? spawnPoint.rotation : Quaternion.identity;
+        Vector3    basePos = spawnPoint != null ? spawnPoint.position : Vector3.zero;
+        Quaternion baseRot = spawnPoint != null ? spawnPoint.rotation : Quaternion.identity;
 
-        // Model position/rotation are relative to spawnPoint
-        Vector3 finalPos      = basePos + baseRot * position;
-        Quaternion finalRot   = baseRot * rotation;
+        Vector3    finalPos = basePos + baseRot * position;
+        Quaternion finalRot = baseRot * rotation;
 
         var instance = Instantiate(glbPrefab, finalPos, finalRot);
-        // Ensure the instance is active (template objects from glTFast may be under a deactivated root)
         instance.SetActive(true);
         instance.transform.localScale = Vector3.one * scale;
 
         var mi = new ModelInstance
         {
             gameObject = instance,
-            graph = default,
-            graphInitialized = false,
-            clipPlayable = default,
-            clipLength = 0f,
-            isLooping = false
+            animation  = null
         };
 
         PlayAnimation(ref mi, animationName, modelResourcePath, preloadedClips, loop);
@@ -112,10 +107,10 @@ public class StepVisualController : MonoBehaviour
     {
         foreach (var mi in activeModels)
         {
+            if (mi.animation != null && mi.animation.isPlaying)
+                mi.animation.Stop();
             if (mi.gameObject != null)
                 Destroy(mi.gameObject);
-            if (mi.graphInitialized && mi.graph.IsValid())
-                mi.graph.Destroy();
         }
         activeModels.Clear();
     }
@@ -125,52 +120,31 @@ public class StepVisualController : MonoBehaviour
         Clear();
     }
 
-    /// <summary>
-    /// Manually wrap playable time for any looping models.
-    /// </summary>
-    void Update()
-    {
-        for (int i = 0; i < activeModels.Count; i++)
-        {
-            var mi = activeModels[i];
-            if (!mi.isLooping || !mi.graphInitialized) continue;
-            if (!mi.graph.IsValid() || !mi.graph.IsPlaying()) continue;
-
-            double time = mi.clipPlayable.GetTime();
-            if (time >= mi.clipLength)
-            {
-                mi.clipPlayable.SetTime(time % mi.clipLength);
-            }
-        }
-    }
-
-    // ── Animation helpers ────────────────────────────────────────────
+    // ── Animation playback (Legacy Animation system) ─────────────────
     void PlayAnimation(ref ModelInstance mi, string animationName, string modelResourcePath, AnimationClip[] preloadedClips, bool loop)
     {
         if (mi.gameObject == null) return;
 
-        // 1. Use pre-loaded clips (from glTFast URL loading) if available
+        // ── 1. Gather clips ─────────────────────────────────────────
         AnimationClip[] clips = preloadedClips;
 
-        // 2. Fallback: load from Resources (for local prefab paths)
         if ((clips == null || clips.Length == 0) && !string.IsNullOrEmpty(modelResourcePath))
             clips = Resources.LoadAll<AnimationClip>(modelResourcePath);
 
         if (clips == null || clips.Length == 0)
         {
             Debug.LogWarning(
-                "[StepVisualController] No AnimationClip sub-assets found for model at Resources/" +
-                modelResourcePath + ". Ensure the GLB has animations imported."
-            );
+                $"[StepVisualController] No animation clips found for model '{modelResourcePath}'. " +
+                "Ensure the GLB has animations.");
             return;
         }
 
-        // Log available clip names for debugging
         Debug.Log($"[StepVisualController] Available clips ({clips.Length}): " +
-                  string.Join(", ", System.Array.ConvertAll(clips, c => c != null ? $"{c.name} (legacy={c.legacy})" : "null")));
-        Debug.Log($"[StepVisualController] Requested animation: '{animationName}'");
+                  string.Join(", ", System.Array.ConvertAll(clips, c =>
+                      c != null ? $"'{c.name}' legacy={c.legacy} length={c.length}s" : "null")));
+        Debug.Log($"[StepVisualController] Requested animation: '{animationName}', loop={loop}");
 
-        // Select clip by name or default to first
+        // ── 2. Select clip by name (exact → fuzzy → first) ─────────
         AnimationClip selected = null;
         if (!string.IsNullOrEmpty(animationName))
         {
@@ -182,7 +156,6 @@ public class StepVisualController : MonoBehaviour
                     break;
                 }
             }
-            // If exact match failed, try case-insensitive contains
             if (selected == null)
             {
                 foreach (var clip in clips)
@@ -196,7 +169,7 @@ public class StepVisualController : MonoBehaviour
                 }
             }
         }
-        if (selected == null)
+        if (selected == null && clips.Length > 0)
             selected = clips[0];
 
         if (selected == null)
@@ -205,58 +178,75 @@ public class StepVisualController : MonoBehaviour
             return;
         }
 
-        // Set wrap mode based on loop flag.
-        selected.wrapMode = loop ? WrapMode.Loop : WrapMode.Once;
-
-        // Safety: ensure non-legacy for Playables API
-        if (selected.legacy)
+        // ── 3. Ensure clip is marked Legacy ─────────────────────────
+        // glTFast already creates them as legacy, but be safe.
+        if (!selected.legacy)
         {
-            Debug.LogWarning($"[StepVisualController] Clip '{selected.name}' was still legacy — converting.");
-            selected.legacy = false;
+            Debug.Log($"[StepVisualController] Clip '{selected.name}' is non-legacy — marking as legacy for Animation component.");
+            selected.legacy = true;
         }
 
-        // Remove any residual legacy Animation component on the clone
-        var legacyAnim = mi.gameObject.GetComponentInChildren<Animation>();
-        if (legacyAnim != null)
+        // Set wrap mode
+        selected.wrapMode = loop ? WrapMode.Loop : WrapMode.ClampForever;
+
+        // ── 4. Get or create the Legacy Animation component ─────────
+        // glTFast places it on the scene-root child (the first child
+        // under our template root).  If it's missing (shouldn't be
+        // with the new loader code), add one at the correct level.
+        var anim = mi.gameObject.GetComponentInChildren<Animation>(true);
+        if (anim == null)
         {
-            Debug.Log("[StepVisualController] Removing residual legacy Animation component from clone.");
-            Destroy(legacyAnim);
+            // Prefer first child (glTF scene root) — curve bindings are
+            // relative to this transform.
+            Transform animTarget = mi.gameObject.transform.childCount > 0
+                ? mi.gameObject.transform.GetChild(0)
+                : mi.gameObject.transform;
+
+            anim = animTarget.gameObject.AddComponent<Animation>();
+            Debug.Log($"[StepVisualController] Added Animation component to '{animTarget.name}'.");
         }
 
-        // Ensure an Animator exists so Playables can drive the pose
-        var animator = mi.gameObject.GetComponentInChildren<Animator>();
-        if (animator == null)
-            animator = mi.gameObject.AddComponent<Animator>();
-
-        try
+        // Remove any Animator that might conflict with the Legacy system
+        var animator = mi.gameObject.GetComponentInChildren<Animator>(true);
+        if (animator != null)
         {
-            Debug.Log($"[StepVisualController] Playing clip '{selected.name}' loop={loop} length={selected.length}s wrapMode={selected.wrapMode}");
-            mi.graph = PlayableGraph.Create("StepAnimationGraph");
-            mi.graph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
-            var output = AnimationPlayableOutput.Create(mi.graph, "Animation", animator);
-            var clipPlayable = AnimationClipPlayable.Create(mi.graph, selected);
-
-            if (loop)
-                clipPlayable.SetDuration(double.MaxValue);
-
-            output.SetSourcePlayable(clipPlayable);
-            mi.graph.Play();
-            mi.graphInitialized = true;
-
-            // Store loop state for Update() time-wrapping
-            mi.clipPlayable = clipPlayable;
-            mi.clipLength = selected.length;
-            mi.isLooping = loop;
-
-            Debug.Log($"[StepVisualController] Graph playing: {mi.graph.IsPlaying()}, " +
-                      $"clip duration={selected.length}s, playable duration={clipPlayable.GetDuration()}, isLooping={mi.isLooping}");
+            Debug.Log($"[StepVisualController] Removing Animator from '{animator.gameObject.name}' — using Legacy Animation.");
+            DestroyImmediate(animator);
         }
-        catch (System.Exception ex)
+
+        mi.animation = anim;
+
+        // ── 5. Add all clips to the Animation component ─────────────
+        // This ensures the component knows about every clip so we can
+        // Play() by name.  Clips may already be there from glTFast;
+        // AddClip silently replaces duplicates.
+        foreach (var clip in clips)
         {
-            Debug.LogError($"[StepVisualController] Playable animation failed: {ex.Message}");
-            if (mi.graph.IsValid())
-                mi.graph.Destroy();
-            mi.graphInitialized = false;
+            if (clip == null) continue;
+            if (!clip.legacy) clip.legacy = true;
+            anim.AddClip(clip, clip.name);
+        }
+
+        // ── 6. Play the selected clip ────────────────────────────────
+        anim.clip = selected;
+        anim.wrapMode = loop ? WrapMode.Loop : WrapMode.ClampForever;
+
+        // Stop any currently playing animation first
+        anim.Stop();
+        anim.Play(selected.name);
+
+        Debug.Log($"[StepVisualController] Playing clip '{selected.name}' via Legacy Animation " +
+                  $"on '{anim.gameObject.name}', loop={loop}, length={selected.length}s, " +
+                  $"isPlaying={anim.isPlaying}, isActiveAndEnabled={anim.isActiveAndEnabled}");
+
+        // ── 7. Verify playback started ───────────────────────────────
+        if (!anim.isPlaying)
+        {
+            Debug.LogWarning($"[StepVisualController] Animation.isPlaying is false after Play(). " +
+                             $"Trying Sample() + Play() workaround...");
+            anim.Sample();
+            anim.Play(selected.name);
+            Debug.Log($"[StepVisualController] After retry: isPlaying={anim.isPlaying}");
         }
     }
 }

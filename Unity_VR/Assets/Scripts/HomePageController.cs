@@ -15,8 +15,10 @@ public class HomePageController : MonoBehaviour
     public UIDocument uiDocument;
 
     [Header("API Settings")]
-    [Tooltip("Base URL of the authoring backend (e.g. http://localhost:8000)")]
-    public string apiBaseUrl = "http://localhost:8000";
+    [Tooltip("Optional override for the backend base URL. If empty, the AppConfig (Assets/Resources/app_config.asset) value is used.")]
+    public string apiBaseUrl;
+    [Tooltip("Optional fallback override. If empty, AppConfig/apiBaseUrlFallback or a sensible default is used.")]
+    public string apiBaseUrlFallback;
 
     [Header("Local Fallback")]
     [Tooltip("Optional: drag a local module_catalog.json TextAsset here for offline use")]
@@ -63,40 +65,51 @@ public class HomePageController : MonoBehaviour
     // ── Catalog loading (API) ────────────────────────────────────────
     IEnumerator LoadCatalogFromApi()
     {
-        string url = apiBaseUrl.TrimEnd('/') + "/api/unity/modules/";
-        Debug.Log($"[HomePageController] Fetching catalog from: {url}");
+        string primary = ApiConfigProvider.GetApiBaseUrl(apiBaseUrl);
+        string fallback = ApiConfigProvider.GetApiBaseUrlFallback(apiBaseUrlFallback);
 
-        using (var request = UnityWebRequest.Get(url))
+        string[] bases = new string[] { primary };
+        if (!string.IsNullOrEmpty(fallback) && fallback != primary)
+            bases = new string[] { primary, fallback };
+
+        foreach (var baseUrl in bases)
         {
-            yield return request.SendWebRequest();
+            string url = baseUrl.TrimEnd('/') + "/api/unity/modules/";
+            Debug.Log($"[HomePageController] Fetching catalog from: {url}");
 
-            if (request.result == UnityWebRequest.Result.Success)
+            using (var request = UnityWebRequest.Get(url))
             {
-                string json = request.downloadHandler.text;
-                try
-                {
-                    catalog = JsonUtility.FromJson<ModuleCatalogData>(json);
-                }
-                catch (System.Exception ex)
-                {
-                    Debug.LogError($"[HomePageController] Failed to parse API catalog JSON: {ex.Message}");
-                    catalog = null;
-                }
+                yield return request.SendWebRequest();
 
-                if (catalog != null && catalog.modules != null)
+                if (request.result == UnityWebRequest.Result.Success)
                 {
-                    Debug.Log($"[HomePageController] Loaded catalog from API with {catalog.modules.Count} module(s).");
-                    BuildCards();
-                    yield break;
+                    string json = request.downloadHandler.text;
+                    try
+                    {
+                        catalog = JsonUtility.FromJson<ModuleCatalogData>(json);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Debug.LogError($"[HomePageController] Failed to parse API catalog JSON: {ex.Message}");
+                        catalog = null;
+                    }
+
+                    if (catalog != null && catalog.modules != null)
+                    {
+                        Debug.Log($"[HomePageController] Loaded catalog from API with {catalog.modules.Count} module(s).");
+                        BuildCards();
+                        yield break;
+                    }
                 }
-            }
-            else
-            {
-                Debug.LogWarning($"[HomePageController] API catalog request failed: {request.error}. Falling back to local.");
+                else
+                {
+                    Debug.LogWarning($"[HomePageController] API catalog request failed for {baseUrl}: {request.error}.");
+                }
             }
         }
 
         // Fallback: load from local TextAsset
+        Debug.LogWarning("[HomePageController] All API endpoints failed; falling back to local catalog.");
         LoadCatalogLocal();
         BuildCards();
     }
